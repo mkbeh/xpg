@@ -39,27 +39,11 @@ type Config struct {
 
 // DSN postgres://username:password@host:port/db?sslmode=disable&<args_string>
 func (c *Config) getDSN() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&application_name=%s&%s",
-		c.User,
-		c.Password,
-		c.ClusterHost,
-		c.getPort(),
-		c.DB,
-		c.appName,
-		c.getArgs(),
-	)
+	return formatDSN(c.User, c.Password, c.ClusterHost, c.getPort(), c.DB, c.appName, c.getArgs())
 }
 
 func (c *Config) getMigrateDSN() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&application_name=%s&%s",
-		c.User,
-		c.Password,
-		c.ClusterHost,
-		c.getMigratePort(),
-		c.DB,
-		c.appName,
-		c.MigrateArgs,
-	)
+	return formatDSN(c.User, c.Password, c.ClusterHost, c.getMigratePort(), c.DB, c.appName, c.MigrateArgs)
 }
 
 func (c *Config) getPort() string {
@@ -95,6 +79,12 @@ func (c *Config) getMaxConns() int32 {
 		return c.MaxRWConn
 	}
 	return c.MaxROConn
+}
+
+func formatDSN(user, pass, host, port, db, appName, args string) string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&application_name=%s&%s",
+		user, pass, host, port, db, appName, args,
+	)
 }
 
 const (
