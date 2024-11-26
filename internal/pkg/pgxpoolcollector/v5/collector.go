@@ -11,6 +11,12 @@
 //	#idle_conns{}
 //	#max_conns{}
 //	#total_conns{}
+//
+// Labels list:
+//	client_id=#{client_id}
+//	db_name=#{db_name}
+//	db_kind=#{master/replica}
+//	shard_id=#{shard_id}
 
 package v5
 
