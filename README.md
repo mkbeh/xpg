@@ -59,7 +59,7 @@ func main() {
 
 ## Migrations
 
-Full example can be found here can be found [here](github.com/mkbeh/postgres/examples).
+Full example can be found [here](github.com/mkbeh/postgres/examples).
 
 Create file `embed.go` in your migrations directory:
 ```go
