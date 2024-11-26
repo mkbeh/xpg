@@ -59,7 +59,9 @@ func NewReader(opts ...Option) (*Pool, error) {
 }
 
 func newPool(writer bool, opts []Option) (*Pool, error) {
-	p := new(Pool)
+	p := &Pool{
+		qBuilder: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
+	}
 
 	for _, opt := range opts {
 		opt.apply(p)
@@ -96,8 +98,6 @@ func newPool(writer bool, opts []Option) (*Pool, error) {
 	}
 
 	p.Pool = conn
-	p.qBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
-
 	p.exposeMetrics(writer)
 
 	collector := poolcollector.NewStatsCollector(p.namespace, "postgres", p.labels, p.Pool)
