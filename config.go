@@ -12,8 +12,8 @@ type Config struct {
 	ClusterHost        string `envconfig:"POSTGRES_CLUSTER_HOST" required:"true"`
 	ClusterPort        string `envconfig:"POSTGRES_CLUSTER_PORT" required:"true"`
 	ClusterReplicaPort string `envconfig:"POSTGRES_CLUSTER_REPLICA_PORT" required:"true"`
-	User               string `envconfig:"POSTGRES_USER"`
-	Password           string `envconfig:"POSTGRES_PASSWORD"`
+	User               string `envconfig:"POSTGRES_USER" required:"true"`
+	Password           string `envconfig:"POSTGRES_PASSWORD" required:"true"`
 	DB                 string `envconfig:"POSTGRES_DB" required:"true"`
 
 	MinRWConn                int32         `envconfig:"POSTGRES_MIN_RW_CONN"`
@@ -50,11 +50,30 @@ func (c *Config) getDSN() string {
 	)
 }
 
+func (c *Config) getMigrateDSN() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&application_name=%s&%s",
+		c.User,
+		c.Password,
+		c.ClusterHost,
+		c.getMigratePort(),
+		c.DB,
+		c.appName,
+		c.MigrateArgs,
+	)
+}
+
 func (c *Config) getPort() string {
 	if c.writer {
 		return c.ClusterPort
 	}
 	return c.ClusterReplicaPort
+}
+
+func (c *Config) getMigratePort() string {
+	if c.MigratePort != "" {
+		return c.MigratePort
+	}
+	return c.ClusterPort
 }
 
 func (c *Config) getArgs() string {

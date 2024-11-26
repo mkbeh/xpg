@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,6 +28,7 @@ type Pool struct {
 	logger        *slog.Logger
 	traceProvider trace.TracerProvider
 	qBuilder      squirrel.StatementBuilderType
+	migrations    []embed.FS
 }
 
 type options struct {
@@ -90,6 +92,14 @@ func newPool(writer bool, opts []Option) (*Pool, error) {
 
 	p.Pool = conn
 	p.qBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+
+	if p.cfg.writer && p.cfg.MigrateEnabled {
+		for _, fs := range p.migrations {
+			if err := runMigrations(fs, p.cfg.getMigrateDSN(), p.logger); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	return p, err
 }

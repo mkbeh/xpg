@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/mkbeh/postgres"
+	"github.com/mkbeh/postgres/examples/sample/migrations"
 )
 
 func getUrlHandler(w http.ResponseWriter, req *http.Request) {
@@ -37,11 +38,13 @@ func main() {
 		User:               "cyberpunk",
 		Password:           "cyberpunk",
 		DB:                 "postgres",
+		MigrateEnabled:     true,
 	}
 
 	writer, err := postgres.NewWriter(
 		postgres.WithConfig(cfg),
 		postgres.WithClientID("test-client"),
+		postgres.WithMigrations(migrations.FS),
 	)
 	if err != nil {
 		panic(err)

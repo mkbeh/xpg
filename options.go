@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"embed"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
@@ -44,5 +45,13 @@ func WithClientID(id string) Option {
 func WithTraceProvider(provider trace.TracerProvider) Option {
 	return optionFunc(func(p *Pool) {
 		p.traceProvider = provider
+	})
+}
+
+func WithMigrations(migrations ...embed.FS) Option {
+	return optionFunc(func(p *Pool) {
+		if len(migrations) > 0 {
+			p.migrations = migrations
+		}
 	})
 }
