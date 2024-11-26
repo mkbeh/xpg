@@ -17,12 +17,68 @@ integration with OpenTelemetry for tracing and metrics.
 Here's a basic overview of using (more examples can be found [here](github.com/mkbeh/postgres/examples)):
 
 ```go
-// todo
+package main
+
+import (
+	"context"
+	"fmt"
+	"github.com/mkbeh/postgres"
+	"log"
+)
+
+func main() {
+	cfg := &postgres.Config{
+		ClusterHost:        "127.0.0.1",
+		ClusterPort:        "5432",
+		ClusterReplicaPort: "5432",
+		User:               "user",
+		Password:           "pass",
+		DB:                 "postgres",
+		MigrateEnabled:     true,
+	}
+
+	writer, err := postgres.NewWriter(
+		postgres.WithConfig(cfg),
+		postgres.WithClientID("test-client"),
+	)
+	if err != nil {
+		log.Fatalln("failed init master pool", err)
+	}
+	defer writer.Close()
+
+	var greeting string
+	err = writer.QueryRow(context.Background(), "select 'Hello, world!'").Scan(&greeting)
+	if err != nil {
+		log.Fatalln("QueryRow failed", err)
+	}
+
+	fmt.Println(greeting)
+}
+
 ```
 
 ## Migrations
 
-[TODO]
+Full example can be found here can be found [here](github.com/mkbeh/postgres/examples).
+
+Create file `embed.go` in your migrations directory:
+```go
+package migrations
+
+import "embed"
+
+//go:embed *.sql
+var FS embed.FS
+```
+
+Pass `embed.FS` with option `WithMigrations`
+
+```go
+writer, _ := postgres.NewWriter(
+    ...
+    postgres.WithMigrations(migrations.FS),
+)
+```
 
 ## Configuration
 

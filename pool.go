@@ -131,28 +131,28 @@ func (p *Pool) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
 	if tx := extractTx(ctx); tx != nil {
 		return tx.SendBatch(ctx, b)
 	}
-	return p.SendBatch(ctx, b)
+	return p.Pool.SendBatch(ctx, b)
 }
 
 func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 	if tx := extractTx(ctx); tx != nil {
 		return tx.Exec(ctx, sql, arguments...)
 	}
-	return p.Exec(ctx, sql, arguments...)
+	return p.Pool.Exec(ctx, sql, arguments...)
 }
 
 func (p *Pool) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	if tx := extractTx(ctx); tx != nil {
 		return tx.Query(ctx, sql, args...)
 	}
-	return p.Query(ctx, sql, args...)
+	return p.Pool.Query(ctx, sql, args...)
 }
 
 func (p *Pool) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	if tx := extractTx(ctx); tx != nil {
 		return tx.QueryRow(ctx, sql, args...)
 	}
-	return p.QueryRow(ctx, sql, args...)
+	return p.Pool.QueryRow(ctx, sql, args...)
 }
 
 // RunInTxx alias for RunInTx.
