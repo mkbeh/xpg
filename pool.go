@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/Masterminds/squirrel"
@@ -14,8 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/tracelog"
+	poolcollector "github.com/mkbeh/postgres/internal/pkg/pgxpoolcollector/v5"
 	"github.com/mkbeh/postgres/internal/pkg/pgxslog"
 	"github.com/mkbeh/postgres/internal/pkg/pgxtracer"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -29,6 +32,8 @@ type Pool struct {
 	traceProvider trace.TracerProvider
 	qBuilder      squirrel.StatementBuilderType
 	migrations    []embed.FS
+	namespace     string
+	labels        prometheus.Labels
 }
 
 type options struct {
@@ -65,7 +70,7 @@ func newPool(writer bool, opts []Option) (*Pool, error) {
 	}
 
 	p.cfg.writer = writer
-	p.cfg.appName = p.id
+	p.cfg.appName = p.getID()
 
 	if p.traceProvider == nil {
 		p.traceProvider = otel.GetTracerProvider()
@@ -76,9 +81,9 @@ func newPool(writer bool, opts []Option) (*Pool, error) {
 	}
 
 	if writer {
-		p.logger.With(pgxslog.Component("master"))
+		p.logger.With(pgxslog.Component("postgres_master"))
 	} else {
-		p.logger.With(pgxslog.Component("replica"))
+		p.logger.With(pgxslog.Component("postgres_replica"))
 	}
 
 	connOpts := parseConfig(p.cfg)
@@ -93,9 +98,14 @@ func newPool(writer bool, opts []Option) (*Pool, error) {
 	p.Pool = conn
 	p.qBuilder = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
+	p.exposeMetrics(writer)
+
+	collector := poolcollector.NewStatsCollector(p.namespace, "postgres", p.labels, p.Pool)
+	prometheus.MustRegister(collector)
+
 	if p.cfg.writer && p.cfg.MigrateEnabled {
 		for _, fs := range p.migrations {
-			if err := runMigrations(fs, p.cfg.getMigrateDSN(), p.logger); err != nil {
+			if err := applyMigrations(fs, p.cfg.getMigrateDSN(), p.logger); err != nil {
 				return nil, err
 			}
 		}
@@ -180,6 +190,29 @@ func (p *Pool) RunInTx(ctx context.Context, fn func(ctx context.Context) error, 
 	}
 
 	return nil
+}
+
+func (p *Pool) getID() string {
+	if p.id == "" {
+		return generateUUID()
+	}
+	return p.id
+}
+
+func (p *Pool) exposeMetrics(writer bool) {
+	if p.labels == nil {
+		p.labels = make(prometheus.Labels)
+	}
+
+	p.labels["client_id"] = p.getID()
+	p.labels["db_name"] = p.cfg.DB
+	p.labels["shard_id"] = strconv.Itoa(p.cfg.ShardID)
+
+	if writer {
+		p.labels["db_kind"] = "master"
+	} else {
+		p.labels["db_kind"] = "replica"
+	}
 }
 
 func connect(opts *options) (*pgxpool.Pool, error) {

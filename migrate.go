@@ -12,7 +12,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
-func runMigrations(fs embed.FS, dsn string, l *slog.Logger) (err error) {
+func applyMigrations(fs embed.FS, dsn string, l *slog.Logger) (err error) {
 	var src source.Driver
 	ctx := context.Background()
 
@@ -43,7 +43,9 @@ func runMigrations(fs embed.FS, dsn string, l *slog.Logger) (err error) {
 		err = errors.Join(errors.New("migrate-up failed"), mErr)
 	} else {
 		ver, dirty, _ := instance.Version()
-		l.InfoContext(ctx, "migrate-up done", slog.Any("version", ver), slog.Any("dirty", dirty))
+		l.InfoContext(ctx, "migrate-up done",
+			slog.Any("version", ver),
+			slog.Any("dirty", dirty))
 	}
 
 	return err

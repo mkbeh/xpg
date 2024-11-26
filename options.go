@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"embed"
+	"fmt"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
@@ -37,7 +38,7 @@ func WithConfig(config *Config) Option {
 func WithClientID(id string) Option {
 	return optionFunc(func(p *Pool) {
 		if id != "" {
-			p.id = id
+			p.id = fmt.Sprintf("%s-%s", id, generateUUID())
 		}
 	})
 }
@@ -52,6 +53,14 @@ func WithMigrations(migrations ...embed.FS) Option {
 	return optionFunc(func(p *Pool) {
 		if len(migrations) > 0 {
 			p.migrations = migrations
+		}
+	})
+}
+
+func WithMetricsNamespace(namespace string) Option {
+	return optionFunc(func(p *Pool) {
+		if namespace != "" {
+			p.namespace = namespace
 		}
 	})
 }
