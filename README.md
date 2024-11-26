@@ -1,13 +1,14 @@
 # Postgres Library
 
-This library provides an API for working with Postgres, using pgx and
+This library provides an API for working with Postgres, using [pgx](github.com/jackc/pgx) and
 integration with OpenTelemetry for tracing and metrics.
 
 ## Features
 
 - Connection pool
 - Master and replica separate connections
-- Query Builder
+- Query Builder such as [squirrel](github.com/Masterminds/squirrel)
+- Built-in migrations using [golang-migrate](github.com/golang-migrate/migrate)
 - Transactions
 - Observability
 
@@ -19,7 +20,23 @@ Here's a basic overview of using (more examples can be found [here](github.com/m
 // todo
 ```
 
+## Migrations
+
+[TODO]
+
 ## Configuration
+
+DSN is formed from the configuration parameters for connection in URL format.
+
+**Default args:**
+
+* `sslmode=disable`
+* `application_name=<client_id>` (or random UUID)
+
+Additional args that can be added:
+
+* `MASTER_ARGS = standard_conforming_strings=on&search_path=<your-schema-name>`
+* `REPLICA_ARGS = standard_conforming_strings=on&search_path=<your-schema-name>`
 
 Available client options:
 
