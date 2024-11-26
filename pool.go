@@ -61,14 +61,12 @@ func NewReader(opts ...Option) (*Pool, error) {
 func newPool(writer bool, opts []Option) (*Pool, error) {
 	p := &Pool{
 		qBuilder: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
+		logger:   slog.Default(),
+		cfg:      &Config{},
 	}
 
 	for _, opt := range opts {
 		opt.apply(p)
-	}
-
-	if p.cfg == nil {
-		p.cfg = new(Config)
 	}
 
 	p.cfg.writer = writer
@@ -76,10 +74,6 @@ func newPool(writer bool, opts []Option) (*Pool, error) {
 
 	if p.traceProvider == nil {
 		p.traceProvider = otel.GetTracerProvider()
-	}
-
-	if p.logger == nil {
-		p.logger = slog.Default()
 	}
 
 	if writer {
