@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -135,6 +136,9 @@ func parseConfig(cfg *Config) *options {
 
 	if cfg.getMaxConns() > 0 {
 		o.maxConns = cfg.getMaxConns()
+		if numCPU := int32(runtime.NumCPU()); numCPU > cfg.getMaxConns() {
+			o.maxConns = numCPU
+		}
 	}
 
 	if cfg.MaxConnLifetime > 0 {
