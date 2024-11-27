@@ -211,13 +211,13 @@ func (p *Pool) exposeMetrics(writer bool) {
 	}
 
 	p.labels["client_id"] = p.getID()
-	p.labels["db_name"] = p.cfg.DB
+	p.labels["db"] = p.cfg.DB
 	p.labels["shard_id"] = strconv.Itoa(p.cfg.ShardID)
 
 	if writer {
-		p.labels["db_kind"] = "master"
+		p.labels["client_kind"] = "master"
 	} else {
-		p.labels["db_kind"] = "replica"
+		p.labels["client_kind"] = "replica"
 	}
 }
 

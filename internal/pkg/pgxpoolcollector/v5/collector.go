@@ -2,20 +2,20 @@
 //
 // This package tracks the following metrics under the following names:
 //
-//	#acquire_count{}
-//	#acquire_duration{}
-//	#acquired_conns{}
-//	#canceled_acquire_count{}
-//	#constructing_conns{}
-//	#empty_acquire_count{}
-//	#idle_conns{}
-//	#max_conns{}
-//	#total_conns{}
+//	#ns_postgres_acquire_count{}
+//	#ns_postgres_acquire_duration{}
+//	#ns_postgres_acquired_conns{}
+//	#ns_postgres_canceled_acquire_count{}
+//	#ns_postgres_constructing_conns{}
+//	#ns_postgres_empty_acquire_count{}
+//	#ns_postgres_idle_conns{}
+//	#ns_postgres_max_conns{}
+//	#ns_postgres_total_conns{}
 //
 // Labels list:
 //	client_id=#{client_id}
-//	db_name=#{db_name}
-//	db_kind=#{master/replica}
+//	client_kind=#{master/replica}
+//	db=#{db}
 //	shard_id=#{shard_id}
 
 package v5
