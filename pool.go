@@ -186,9 +186,21 @@ func (p *Pool) RunInTx(ctx context.Context, fn func(ctx context.Context) error, 
 	return nil
 }
 
+func (p *Pool) AcquireTxLock(ctx context.Context, key string, durationSeconds float64) (isLocked bool, err error) {
+	row := p.QueryRow(ctx, `
+		SELECT CASE
+           WHEN pg_try_advisory_xact_lock($1) THEN (SELECT concat(pg_sleep($2), 'false'))::bool
+           ELSE true
+           END AS is_locked;`,
+		int64(StringAsHash64(key)),
+		durationSeconds)
+	err = row.Scan(&isLocked)
+	return
+}
+
 func (p *Pool) getID() string {
 	if p.id == "" {
-		return generateUUID()
+		return GenerateUUID()
 	}
 	return p.id
 }

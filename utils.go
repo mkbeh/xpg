@@ -1,7 +1,17 @@
 package postgres
 
-import "github.com/google/uuid"
+import (
+	"hash/fnv"
 
-func generateUUID() string {
+	"github.com/google/uuid"
+)
+
+func GenerateUUID() string {
 	return uuid.New().String()
+}
+
+func StringAsHash64(s string) uint64 {
+	hash := fnv.New64()
+	_, _ = hash.Write([]byte(s))
+	return hash.Sum64()
 }

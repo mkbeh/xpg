@@ -38,7 +38,7 @@ func WithConfig(config *Config) Option {
 func WithClientID(id string) Option {
 	return optionFunc(func(p *Pool) {
 		if id != "" {
-			p.id = fmt.Sprintf("%s-%s", id, generateUUID())
+			p.id = fmt.Sprintf("%s-%s", id, GenerateUUID())
 		}
 	})
 }
@@ -57,10 +57,10 @@ func WithMigrations(migrations ...embed.FS) Option {
 	})
 }
 
-func WithMetricsNamespace(namespace string) Option {
+func WithMetricsNamespace(ns string) Option {
 	return optionFunc(func(p *Pool) {
-		if namespace != "" {
-			p.namespace = namespace
+		if ns != "" {
+			p.namespace = ns
 		}
 	})
 }

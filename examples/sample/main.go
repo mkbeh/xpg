@@ -30,7 +30,7 @@ func init() {
 	db = os.Getenv("POSTGRES_DB")
 }
 
-func getUrlHandler(w http.ResponseWriter, req *http.Request) {
+func getTasksHandler(w http.ResponseWriter, req *http.Request) {
 	type task struct {
 		Id          int    `json:"id"`
 		Description string `json:"description"`
@@ -59,10 +59,8 @@ func getUrlHandler(w http.ResponseWriter, req *http.Request) {
 	w.Write(data)
 }
 
-func postUrlHandler(w http.ResponseWriter, req *http.Request) {
-	query := `INSERT INTO tasks VALUES (1, 'test1'), (2, 'test-2') ON CONFLICT DO NOTHING;`
-
-	_, err := writer.Exec(req.Context(), query)
+func createTasksHandler(w http.ResponseWriter, req *http.Request) {
+	_, err := writer.Exec(req.Context(), "INSERT INTO tasks VALUES (1, 'test1'), (2, 'test-2') ON CONFLICT DO NOTHING;")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
@@ -103,8 +101,8 @@ func main() {
 	}
 	defer reader.Close()
 
-	http.HandleFunc("/get", getUrlHandler)
-	http.HandleFunc("/create", postUrlHandler)
+	http.HandleFunc("/get", getTasksHandler)
+	http.HandleFunc("/create", createTasksHandler)
 	http.Handle("/metrics", promhttp.Handler())
 
 	err = http.ListenAndServe("localhost:8080", nil)
