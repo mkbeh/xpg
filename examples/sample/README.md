@@ -33,3 +33,9 @@ curl '127.0.0.1:8080/create'
 ```shell
 curl '127.0.0.1:8080/get'
 ```
+
+## Metrics
+
+```shell
+curl 'http://localhost:8080/metrics'
+```
