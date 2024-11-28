@@ -24,12 +24,12 @@ go run main.go
 
 ## Create tasks
 
-```
+```shell
 curl '127.0.0.1:8080/create'
 ```
 
 ## Get tasks
 
-```
+```shell
 curl '127.0.0.1:8080/get'
 ```
