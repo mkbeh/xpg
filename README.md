@@ -14,7 +14,7 @@ integration with OpenTelemetry for tracing and metrics.
 
 ## Getting started
 
-Here's a basic overview of using (more examples can be found [here](github.com/mkbeh/postgres/examples)):
+Here's a basic overview of using (more examples can be found [here](https://github.com/mkbeh/postgres/tree/main/examples)):
 
 ```go
 package main
@@ -59,7 +59,7 @@ func main() {
 
 ## Migrations
 
-Full example can be found [here](github.com/mkbeh/postgres/examples).
+Full example can be found [here](https://github.com/mkbeh/postgres/tree/main/examples).
 
 Create file `embed.go` in your migrations directory:
 ```go
