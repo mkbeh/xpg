@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/mkbeh/postgres"
-	"github.com/mkbeh/postgres/examples/sample/migrations"
+	"github.com/mkbeh/xpg"
+	"github.com/mkbeh/xpg/examples/sample/migrations"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
