@@ -1,3 +1,7 @@
+# 0.1.3 (January 16, 2025)
+
+* chore: rename module to xpg
+
 # 0.1.2 (January 5, 2025)
 
 * chore: bump deps
