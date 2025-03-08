@@ -10,10 +10,15 @@ Configure the database connection with environment variables:
 
 ```text
 POSTGRES_CLUSTER_HOST=127.0.0.1
-POSTGRES_CLUSTER_PORT=5432
+POSTGRES_CLUSTER_PORT=54320
 POSTGRES_DB=db
 POSTGRES_PASSWORD=pass
 POSTGRES_USER=user
+```
+
+Set up docker-compose:
+```shell
+docker-compose up --build -d
 ```
 
 Run main.go:
