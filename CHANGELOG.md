@@ -1,3 +1,7 @@
+# 0.1.5 (March 8, 2025)
+
+* fix: lint
+
 # 0.1.4 (March 8, 2025)
 
 * build: bump go ver to 1.24
