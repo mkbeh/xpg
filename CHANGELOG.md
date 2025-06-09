@@ -1,3 +1,7 @@
+# 0.1.6 (June 9, 2025)
+
+* build: bump dependencies
+
 # 0.1.5 (March 8, 2025)
 
 * fix: lint
