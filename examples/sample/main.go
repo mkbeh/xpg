@@ -6,13 +6,15 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/mkbeh/xpg"
+	postgres "github.com/mkbeh/xpg"
 	"github.com/mkbeh/xpg/examples/sample/migrations"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var writer *postgres.Pool
-var reader *postgres.Pool
+var (
+	writer *postgres.Pool
+	reader *postgres.Pool
+)
 
 var (
 	host string
