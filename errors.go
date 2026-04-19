@@ -16,6 +16,8 @@ const (
 	ErrContextDeadline PgErrorCode = iota
 	ErrNoRows
 	ErrUniqViolation
+	ErrForeignKeyViolation
+	ErrSerializable
 	ErrOther
 	ErrBeginTransaction
 	ErrCommitTransaction
@@ -59,19 +61,22 @@ func ConvertError(err error) *PgError {
 		return NewPgError(ErrNoRows, err)
 	default:
 		var pgErr *pgconn.PgError
-		var code string
-
-		if errors.As(err, &pgErr) {
-			code = pgErr.Code
-		}
-
-		switch code {
-		case "":
-			return NewPgError(ErrOther, err)
-		case pgerrcode.UniqueViolation:
-			return NewPgError(ErrUniqViolation, err)
-		default:
+		if !errors.As(err, &pgErr) {
 			return NewPgError(ErrOther, err)
 		}
+		return NewPgError(pgCodeToError(pgErr.Code), err)
 	}
+}
+
+var pgCodeMap = map[string]PgErrorCode{
+	pgerrcode.UniqueViolation:      ErrUniqViolation,
+	pgerrcode.ForeignKeyViolation:  ErrForeignKeyViolation,
+	pgerrcode.SerializationFailure: ErrSerializable,
+}
+
+func pgCodeToError(code string) PgErrorCode {
+	if c, ok := pgCodeMap[code]; ok {
+		return c
+	}
+	return ErrOther
 }

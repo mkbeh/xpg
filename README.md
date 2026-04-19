@@ -1,20 +1,23 @@
-# Postgres Library
+# xpg
 
-This library provides an API for working with Postgres, using [pgx](github.com/jackc/pgx) and
-integration with OpenTelemetry for tracing and metrics.
+PostgreSQL client for Go built on top of [pgx](https://github.com/jackc/pgx), with connection pooling, separate
+master/replica pools, built-in migrations, query builder, and OpenTelemetry observability out of the box.
 
 ## Features
 
-- Connection pool
-- Master and replica separate connections
-- Query Builder such as [squirrel](github.com/Masterminds/squirrel)
-- Built-in migrations using [golang-migrate](github.com/golang-migrate/migrate)
-- Transactions
-- Observability
+- Separate connection pools for master (writer) and replica (reader)
+- Query builder via [squirrel](https://github.com/Masterminds/squirrel)
+- Built-in migrations via [golang-migrate](https://github.com/golang-migrate/migrate)
+- Transaction helpers with panic recovery
+- OpenTelemetry tracing and Prometheus metrics
+
+## Installation
+
+```bash
+go get github.com/mkbeh/xpg
+```
 
 ## Getting started
-
-Here's a basic overview of using (more examples can be found [here](https://github.com/mkbeh/xpg/tree/main/examples)):
 
 ```go
 package main
@@ -22,8 +25,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/mkbeh/xpg"
 	"log"
+
+	"github.com/mkbeh/xpg"
 )
 
 func main() {
@@ -34,34 +38,56 @@ func main() {
 		User:               "user",
 		Password:           "pass",
 		DB:                 "postgres",
-		MigrateEnabled:     true,
 	}
 
 	writer, err := postgres.NewWriter(
 		postgres.WithConfig(cfg),
-		postgres.WithClientID("test-client"),
+		postgres.WithClientID("my-service"),
 	)
 	if err != nil {
-		log.Fatalln("failed init master pool", err)
+		log.Fatalln("failed to init writer pool:", err)
 	}
 	defer writer.Close()
 
-	var greeting string
-	err = writer.QueryRow(context.Background(), "select 'Hello, world!'").Scan(&greeting)
+	reader, err := postgres.NewReader(postgres.WithConfig(cfg))
 	if err != nil {
-		log.Fatalln("QueryRow failed", err)
+		log.Fatalln("failed to init reader pool:", err)
 	}
+	defer reader.Close()
 
+	var greeting string
+	if err = writer.QueryRow(context.Background(), "select 'Hello, world!'").Scan(&greeting); err != nil {
+		log.Fatalln("QueryRow failed:", err)
+	}
 	fmt.Println(greeting)
 }
-
 ```
+
+More examples: [examples/](https://github.com/mkbeh/xpg/tree/main/examples)
+
+## Transactions
+
+```go
+err := writer.RunInTxx(ctx, func (ctx context.Context) error {
+_, err := writer.Exec(ctx, "insert into orders (id) values ($1)", id)
+return err
+})
+```
+
+`RunInTxx` uses default transaction options. For custom isolation level or access mode, use `RunInTx`:
+
+```go
+err := writer.RunInTx(ctx, func (ctx context.Context) error {
+// ...
+}, pgx.TxOptions{IsoLevel: pgx.Serializable})
+```
+
+Rollback is automatic. Commit happens only if the function returns nil. Panics are recovered and returned as errors.
 
 ## Migrations
 
-Full example can be found [here](https://github.com/mkbeh/xpg/tree/main/examples).
+Create `embed.go` in your migrations directory:
 
-Create file `embed.go` in your migrations directory:
 ```go
 package migrations
 
@@ -71,51 +97,95 @@ import "embed"
 var FS embed.FS
 ```
 
-Pass `embed.FS` with option `WithMigrations`
+Pass it via `WithMigrations`. Migrations run automatically on `NewWriter` when `MigrateEnabled` is true:
 
 ```go
-writer, _ := postgres.NewWriter(
-    ...
-    postgres.WithMigrations(migrations.FS),
+writer, err := postgres.NewWriter(
+postgres.WithConfig(cfg),
+postgres.WithMigrations(migrations.FS),
 )
 ```
 
+Migration files follow standard golang-migrate naming: `000001_create_users.up.sql` / `000001_create_users.down.sql`.
+
 ## Configuration
 
-DSN is formed from the configuration parameters for connection in URL format.
+The DSN is constructed from `Config` fields in the format:
 
-**Default args:**
+```
+postgres://user:pass@host:port/db?sslmode=disable&application_name=<id>&<args>
+```
 
-* `sslmode=disable`
-* `application_name=<client_id>` (or random UUID)
+### Config struct
 
-Additional args that can be added:
+```go
+cfg := &postgres.Config{
+ClusterHost:        "127.0.0.1", // required
+ClusterPort:        "5432",      // required, master port
+ClusterReplicaPort: "5433", // required, replica port
+User:               "user", // required
+Password:           "pass",        // required
+DB:                 "mydb",        // required
 
-* `MASTER_ARGS = standard_conforming_strings=on&search_path=<your-schema-name>`
-* `REPLICA_ARGS = standard_conforming_strings=on&search_path=<your-schema-name>`
+MaxRWConn:       16,
+MaxROConn:       16,
+MaxConnLifetime: 5 * time.Minute,
+MaxConnIdleTime: 30 * time.Second,
 
-Available client options:
+MigrateEnabled: true,
+}
+```
 
-| ENV                                 | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-|-------------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| POSTGRES_SHARD_ID                   | -        | Shard ID. **Default**: 0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| POSTGRES_CLUSTER_HOST               | true     | Database host.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| POSTGRES_CLUSTER_PORT               | true     | Database master port.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| POSTGRES_CLUSTER_REPLICA_PORT       | true     | Database replica port.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| POSTGRES_USER                       | true     | Database user.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| POSTGRES_PASSWORD                   | true     | Database password.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| POSTGRES_DB                         | true     | Database name.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| POSTGRES_MIN_RW_CONN                | -        | Is the minimum size of the pool. After connection closes, the pool might dip below MinConns. A low number of MinConns might mean the pool is empty after MaxConnLifetime until the health check has a chance to create new connections. **Default**: 1.                                                                                                                                                                                                                                                                                                   |
-| POSTGRES_MIN_RO_CONN                | -        | e.g. **POSTGRES_MIN_RW_CONN**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| POSTGRES_MAX_RW_CONN                | -        | Is the maximum size of the pool. The default is the greater of 4 or runtime.NumCPU().                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| POSTGRES_MAX_RO_CONN                | -        | e.g. **POSTGRES_MAX_RW_CONN**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| POSTGRES_MAX_CONN_LIFETIME          | -        | Is the duration since creation after which a connection will be automatically closed. **Default**: 1m.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| POSTGRES_MAX_CONN_IDLE_TIME         | -        | Is the duration after which an idle connection will be automatically closed by the health check. **Default**: 30s.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| POSTGRES_QUERY_EXEC_MODE            | -        | Controls the default mode for executing queries. By default pgx uses the extended protocol and automatically prepares and caches prepared statements. However, this may be incompatible with proxies such as PGBouncer. In this case it may be preferable to use QueryExecModeExec or QueryExecModeSimpleProtocol. The same functionality can be controlled on a per query basis by passing a QueryExecMode as the first query argument. **Values**: cache_statement, cache_describe, describe_exec, exec, simple_protocol. **Default**: cache_statement. |
-| POSTGRES_STATEMENT_CACHE_CAPACITY   | -        | Is maximum size of the statement cache used when executing a query with "cache_statement" query exec mode. **Default**: 128.                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| POSTGRES_DESCRIPTION_CACHE_CAPACITY | -        | Is the maximum size of the description cache used when executing a query with "cache_describe" query exec mode. **Default**: 512.                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| POSTGRES_MASTER_ARGS                | -        | Additional arguments for connection string.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| POSTGRES_REPLICA_ARGS               | -        | e.g. **POSTGRES_REPLICA_ARGS**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| POSTGRES_MIGRATE_ENABLED            | -        | Enable migrations if passed. **Default**: false.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| POSTGRES_MIGRATE_ARGS               | -        | e.g. **POSTGRES_MASTER_ARGS**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| POSTGRES_MIGRATE_PORT               | -        | Migrate port. if value is not passed by default value is used **POSTGRES_CLUSTER_PORT**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+### Environment variables
+
+| Variable                              | Required | Default                 | Description                                            |
+|---------------------------------------|----------|-------------------------|--------------------------------------------------------|
+| `POSTGRES_CLUSTER_HOST`               | ✓        | —                       | Database host                                          |
+| `POSTGRES_CLUSTER_PORT`               | ✓        | —                       | Master port                                            |
+| `POSTGRES_CLUSTER_REPLICA_PORT`       | ✓        | —                       | Replica port                                           |
+| `POSTGRES_USER`                       | ✓        | —                       | Database user                                          |
+| `POSTGRES_PASSWORD`                   | ✓        | —                       | Database password                                      |
+| `POSTGRES_DB`                         | ✓        | —                       | Database name                                          |
+| `POSTGRES_SHARD_ID`                   |          | `0`                     | Shard ID (exposed in metrics)                          |
+| `POSTGRES_MIN_RW_CONN`                |          | `1`                     | Min connections in writer pool                         |
+| `POSTGRES_MIN_RO_CONN`                |          | `1`                     | Min connections in reader pool                         |
+| `POSTGRES_MAX_RW_CONN`                |          | `max(4, NumCPU)`        | Max connections in writer pool                         |
+| `POSTGRES_MAX_RO_CONN`                |          | `max(4, NumCPU)`        | Max connections in reader pool                         |
+| `POSTGRES_MAX_CONN_LIFETIME`          |          | `1m`                    | Max connection lifetime                                |
+| `POSTGRES_MAX_CONN_IDLE_TIME`         |          | `30s`                   | Max idle connection lifetime                           |
+| `POSTGRES_QUERY_EXEC_MODE`            |          | `cache_statement`       | Query execution mode (see below)                       |
+| `POSTGRES_STATEMENT_CACHE_CAPACITY`   |          | `128`                   | Statement cache size                                   |
+| `POSTGRES_DESCRIPTION_CACHE_CAPACITY` |          | `512`                   | Description cache size                                 |
+| `POSTGRES_MASTER_ARGS`                |          | —                       | Extra DSN args for master, e.g. `search_path=myschema` |
+| `POSTGRES_REPLICA_ARGS`               |          | —                       | Extra DSN args for replica                             |
+| `POSTGRES_MIGRATE_ENABLED`            |          | `false`                 | Run migrations on startup                              |
+| `POSTGRES_MIGRATE_PORT`               |          | `POSTGRES_CLUSTER_PORT` | Port used for migrations                               |
+| `POSTGRES_MIGRATE_ARGS`               |          | —                       | Extra DSN args for migration connection                |
+
+### Query execution modes
+
+| Value             | Protocol | Round trips             | Description                                                                                                                                                                        |
+|-------------------|----------|-------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cache_statement` | Extended | 1 (after cache warm-up) | Automatically prepares and caches statements. **Default.** May fail on first execution after schema changes.                                                                       |
+| `cache_describe`  | Extended | 1 (after cache warm-up) | Caches argument and result type descriptions instead of full statements. Same schema-change caveat.                                                                                |
+| `describe_exec`   | Extended | 2                       | Fetches description on every execution, then executes. No caching — safe with concurrent schema changes. May break connection poolers that switch connections between round trips. |
+| `exec`            | Extended | 1                       | No prepare, no describe. Infers PostgreSQL types from Go types using text format. Register custom types with `pgtype.Map.RegisterDefaultPgType`.                                   |
+| `simple_protocol` | Simple   | 1                       | Client-side parameter interpolation. Compatible with PgBouncer and proxies that don't support the extended protocol. Prefer `exec` when possible.                                  |
+
+> For PgBouncer in transaction pooling mode use `simple_protocol`. For session pooling mode `cache_statement` works
+> fine.
+
+## Client options
+
+| Option                     | Description                                                             |
+|----------------------------|-------------------------------------------------------------------------|
+| `WithConfig(cfg)`          | Set connection config                                                   |
+| `WithClientID(id)`         | Set a human-readable client identifier (appended to `application_name`) |
+| `WithLogger(l)`            | Set a custom `slog.Logger`                                              |
+| `WithTraceProvider(tp)`    | Set a custom OpenTelemetry `TracerProvider`                             |
+| `WithMigrations(fs...)`    | Provide one or more `embed.FS` with migration files                     |
+| `WithMetricsNamespace(ns)` | Set Prometheus metrics namespace                                        |
+
+## License
+
+[MIT](LICENSE)

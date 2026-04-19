@@ -77,9 +77,9 @@ func newPool(writer bool, opts []Option) (*Pool, error) {
 	}
 
 	if writer {
-		p.logger.With(pgxslog.Component("postgres_master"))
+		p.logger = p.logger.With(pgxslog.Component("postgres_master"))
 	} else {
-		p.logger.With(pgxslog.Component("postgres_replica"))
+		p.logger = p.logger.With(pgxslog.Component("postgres_replica"))
 	}
 
 	connOpts := parseConfig(p.cfg)
@@ -178,7 +178,7 @@ func (p *Pool) RunInTx(ctx context.Context, fn func(ctx context.Context) error, 
 		return err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err = tx.Commit(ctx); err != nil {
 		p.Logger().ErrorContext(ctx, "failed to commit transaction", pgxslog.Error(err))
 		return NewPgError(ErrCommitTransaction, err)
 	}
@@ -195,7 +195,7 @@ func (p *Pool) AcquireTxLock(ctx context.Context, key string, durationSeconds fl
 		int64(StringAsHash64(key)),
 		durationSeconds)
 	err = row.Scan(&isLocked)
-	return
+	return isLocked, err
 }
 
 func (p *Pool) getID() string {
