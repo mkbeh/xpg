@@ -142,6 +142,24 @@ func (c *Config) getMaxConns() int32 {
 	return c.MaxROConn
 }
 
+func (c *Config) resolvedMinConns() int32 {
+	if v := c.getMinConns(); v > 0 {
+		return v
+	}
+	return 1
+}
+
+func (c *Config) resolvedMaxConns() int32 {
+	v := c.getMaxConns()
+	if v <= 0 {
+		v = 4
+	}
+	if numCPU := int32(runtime.NumCPU()); numCPU > v {
+		return numCPU
+	}
+	return v
+}
+
 func formatDSN(user, pass, host, port, db, appName, args string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&application_name=%s&%s",
 		user, pass, host, port, db, appName, args,
@@ -181,8 +199,8 @@ func getQueryExecMode(mode string) pgx.QueryExecMode {
 func parseConfig(cfg *Config) *options {
 	o := &options{
 		dsn:                      cfg.getDSN(),
-		minConns:                 1,
-		maxConns:                 4,
+		minConns:                 cfg.resolvedMinConns(),
+		maxConns:                 cfg.resolvedMaxConns(),
 		maxConnLifetime:          time.Minute * 1,
 		maxConnIdleTime:          time.Second * 30,
 		defaultQueryExecMode:     getQueryExecMode(cfg.QueryExecMode),
