@@ -25,7 +25,7 @@ func (l *Logger) Log(ctx context.Context, level tracelog.LogLevel, msg string, d
 	switch level {
 	case tracelog.LogLevelTrace:
 		lvl = slog.LevelDebug - 1
-		attrs = append(attrs, slog.Any("PGX_LOG_LEVEL", level))
+		attrs = append(attrs, slog.Any("pgx_log_level", level))
 	case tracelog.LogLevelDebug:
 		lvl = slog.LevelDebug
 	case tracelog.LogLevelInfo:
@@ -36,7 +36,7 @@ func (l *Logger) Log(ctx context.Context, level tracelog.LogLevel, msg string, d
 		lvl = slog.LevelError
 	default:
 		lvl = slog.LevelError
-		attrs = append(attrs, slog.Any("INVALID_PGX_LOG_LEVEL", level))
+		attrs = append(attrs, slog.Any("invalid_pgx_log_level", level))
 	}
 	//nolint:sloglint // there is no other option to pass the message
 	l.l.LogAttrs(ctx, lvl, msg, attrs...)

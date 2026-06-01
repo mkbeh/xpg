@@ -69,8 +69,8 @@ More examples: [examples/](https://github.com/mkbeh/xpg/tree/main/examples)
 
 ```go
 err := writer.RunInTxx(ctx, func (ctx context.Context) error {
-_, err := writer.Exec(ctx, "insert into orders (id) values ($1)", id)
-return err
+    _, err := writer.Exec(ctx, "insert into orders (id) values ($1)", id)
+    return err
 })
 ```
 
@@ -78,7 +78,7 @@ return err
 
 ```go
 err := writer.RunInTx(ctx, func (ctx context.Context) error {
-// ...
+    // ...
 }, pgx.TxOptions{IsoLevel: pgx.Serializable})
 ```
 
@@ -101,8 +101,8 @@ Pass it via `WithMigrations`. Migrations run automatically on `NewWriter` when `
 
 ```go
 writer, err := postgres.NewWriter(
-postgres.WithConfig(cfg),
-postgres.WithMigrations(migrations.FS),
+    postgres.WithConfig(cfg),
+    postgres.WithMigrations(migrations.FS),
 )
 ```
 
@@ -120,19 +120,19 @@ postgres://user:pass@host:port/db?sslmode=disable&application_name=<id>&<args>
 
 ```go
 cfg := &postgres.Config{
-ClusterHost:        "127.0.0.1", // required
-ClusterPort:        "5432",      // required, master port
-ClusterReplicaPort: "5433", // required, replica port
-User:               "user", // required
-Password:           "pass",        // required
-DB:                 "mydb",        // required
-
-MaxRWConn:       16,
-MaxROConn:       16,
-MaxConnLifetime: 5 * time.Minute,
-MaxConnIdleTime: 30 * time.Second,
-
-MigrateEnabled: true,
+    ClusterHost:        "127.0.0.1", // required
+    ClusterPort:        "5432",      // required, master port
+    ClusterReplicaPort: "5433", // required, replica port
+    User:               "user", // required
+    Password:           "pass",        // required
+    DB:                 "mydb",        // required
+    
+    MaxRWConn:       16,
+    MaxROConn:       16,
+    MaxConnLifetime: 5 * time.Minute,
+    MaxConnIdleTime: 30 * time.Second,
+    
+    MigrateEnabled: true,
 }
 ```
 
