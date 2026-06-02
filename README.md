@@ -1,5 +1,8 @@
 # xpg
 
+![Go Version](https://img.shields.io/badge/go-1.26+-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 PostgreSQL client for Go built on top of [pgx](https://github.com/jackc/pgx), with connection pooling, separate
 master/replica pools, built-in migrations, query builder, and OpenTelemetry observability out of the box.
 
