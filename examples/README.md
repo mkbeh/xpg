@@ -7,6 +7,7 @@ This directory contains runnable examples demonstrating the main features and us
 | [`basic`](basic)               | Pool lifecycle and common query methods                                                   |
 | [`transactions`](transactions) | Committing an outer transaction after an optional operation is rolled back to a savepoint |
 | [`advisory`](advisory)         | Coordinating concurrent transactions with PostgreSQL advisory locks                       |
+| [`otel`](otel)                 | Exporting pool metrics through OpenTelemetry and Prometheus                               |
 
 ## Running the examples
 

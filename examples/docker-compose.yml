@@ -17,7 +17,7 @@ services:
       start_period: 5s
 
   adminer:
-    image: adminer:5.4.2-standalone
+    image: adminer:standalone
     profiles:
       - tools
     environment:

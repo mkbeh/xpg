@@ -26,21 +26,28 @@ Set `XPG_DATABASE_URL` to use another PostgreSQL instance:
 export XPG_DATABASE_URL='postgres://user:password@localhost:5432/database?sslmode=disable'
 ```
 
-## Local PostgreSQL setup
+## Local setup
 
-From the repository root, start PostgreSQL and Adminer:
+Start PostgreSQL and Adminer from the repository root:
 
 ```shell
 docker compose -f examples/docker-compose.yml --profile tools up -d
 ```
 
-Or from this directory:
+Or from this example directory:
 
 ```shell
 docker compose -f ../docker-compose.yml --profile tools up -d
 ```
 
-Adminer is available at <http://localhost:8080>. Sign in with:
+Services are available at:
+
+```text
+PostgreSQL: localhost:5432
+Adminer:    http://localhost:8080
+```
+
+Sign in to Adminer with:
 
 ```text
 System:   PostgreSQL
@@ -49,10 +56,6 @@ Username: postgres
 Password: postgres
 Database: postgres
 ```
-
-> [!IMPORTANT]
-> Use `postgres`, not `localhost`, in the **Server** field. Adminer connects through the Docker Compose network, where
-> PostgreSQL is available by its service name.
 
 ## Run
 
