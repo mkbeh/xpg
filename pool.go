@@ -13,7 +13,8 @@ import (
 
 // Pool is a concurrency-safe PostgreSQL connection pool backed by pgxpool.
 type Pool struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	metrics PoolMetricsRegistration
 
 	name   string
 	labels map[string]string
@@ -50,21 +51,39 @@ func New(ctx context.Context, config *pgxpool.Config, options ...Option) (*Pool,
 		return nil, err
 	}
 
-	pgxPool, err := pgxpool.NewWithConfig(ctx, config.Copy())
+	poolConfig := config.Copy()
+	connConfig := poolConfig.ConnConfig
+
+	pgxPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("xpg: create pool: %w", err)
 	}
 
-	return &Pool{
-		pool:   pgxPool,
-		name:   settings.name,
+	pool := &Pool{
+		pool: pgxPool,
+		name: settings.poolName(
+			connConfig.Host,
+			connConfig.Port,
+			connConfig.Database,
+		),
 		labels: cloneLabels(settings.labels),
-	}, nil
+	}
+
+	if err := pool.registerMetrics(settings.metrics); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("xpg: register pool metrics: %w", err)
+	}
+
+	return pool, nil
 }
 
 // Name returns the logical pool name configured with WithName.
 func (p *Pool) Name() string {
 	return p.name
+}
+
+func (p *Pool) Labels() map[string]string {
+	return cloneLabels(p.labels)
 }
 
 // Raw returns the underlying pgxpool.Pool.
@@ -79,7 +98,13 @@ func (p *Pool) Ping(ctx context.Context) error {
 // Close closes the underlying pool and waits for acquired connections to be
 // returned. Close is safe to call multiple times.
 func (p *Pool) Close() {
-	p.closeOnce.Do(p.pool.Close)
+	p.closeOnce.Do(func() {
+		if p.metrics != nil {
+			p.metrics.Close()
+		}
+
+		p.pool.Close()
+	})
 }
 
 func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
@@ -100,4 +125,19 @@ func (p *Pool) SendBatch(ctx context.Context, batch *pgx.Batch) pgx.BatchResults
 
 func (p *Pool) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
 	return p.pool.CopyFrom(ctx, tableName, columnNames, rowSrc)
+}
+
+func (p *Pool) registerMetrics(metrics PoolMetrics) error {
+	if metrics == nil {
+		return nil
+	}
+
+	registration, err := metrics.Register(p)
+	if err != nil {
+		return err
+	}
+
+	p.metrics = registration
+
+	return nil
 }

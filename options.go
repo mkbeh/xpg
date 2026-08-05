@@ -3,6 +3,9 @@ package xpg
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"net"
+	"strconv"
 	"strings"
 )
 
@@ -20,8 +23,25 @@ func (option optionFunc) apply(settings *settings) error {
 }
 
 type settings struct {
-	name   string
-	labels map[string]string
+	name    string
+	labels  map[string]string
+	metrics PoolMetrics
+}
+
+func (s settings) poolName(host string, port uint16, database string) string {
+	if s.name != "" {
+		return s.name
+	}
+
+	address := net.JoinHostPort(
+		host,
+		strconv.Itoa(int(port)),
+	)
+	if database == "" {
+		return address
+	}
+
+	return address + "/" + database
 }
 
 func defaultSettings() *settings {
@@ -98,16 +118,29 @@ func WithLabel(key, value string) Option {
 	})
 }
 
+// WithMetrics attaches one metrics implementation to the pool.
+//
+// Metrics are registered during New and unregistered automatically when the
+// Pool is closed.
+func WithMetrics(metrics PoolMetrics) Option {
+	return optionFunc(func(settings *settings) error {
+		if metrics == nil {
+			return errors.New("pool metrics is nil")
+		}
+
+		settings.metrics = metrics
+
+		return nil
+	})
+}
+
 func cloneLabels(labels map[string]string) map[string]string {
 	if len(labels) == 0 {
 		return nil
 	}
 
 	cloned := make(map[string]string, len(labels))
-
-	for key, value := range labels {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, labels)
 
 	return cloned
 }
