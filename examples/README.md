@@ -8,6 +8,8 @@ This directory contains runnable examples demonstrating the main features and us
 | [`transactions`](transactions) | Committing an outer transaction after an optional operation is rolled back to a savepoint |
 | [`advisory`](advisory)         | Coordinating concurrent transactions with PostgreSQL advisory locks                       |
 | [`otel`](otel)                 | Exporting pool metrics through OpenTelemetry and Prometheus                               |
+| [`cluster`](cluster)           | Routing reads and transactions across primary and replica pools                           |
+| [`sharding`](shard)            | Typed routing across immutable standalone and cluster shard targets                       |
 
 ## Running the examples
 

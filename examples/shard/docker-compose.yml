@@ -1,0 +1,68 @@
+services:
+  postgres-shard-a-primary:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "56431:5432"
+    volumes:
+      - shard-a-primary-data:/var/lib/postgresql
+      - ./sql/shard.sql:/docker-entrypoint-initdb.d/10-shard.sql:ro
+      - ./sql/shard-a-primary.sql:/docker-entrypoint-initdb.d/20-node.sql:ro
+    healthcheck: &postgres-healthcheck
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres-shard-b-primary:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "56432:5432"
+    volumes:
+      - shard-b-primary-data:/var/lib/postgresql
+      - ./sql/shard.sql:/docker-entrypoint-initdb.d/10-shard.sql:ro
+      - ./sql/shard-b-primary.sql:/docker-entrypoint-initdb.d/20-node.sql:ro
+    healthcheck: *postgres-healthcheck
+
+  postgres-shard-b-replica:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "56433:5432"
+    volumes:
+      - shard-b-replica-data:/var/lib/postgresql
+      - ./sql/shard.sql:/docker-entrypoint-initdb.d/10-shard.sql:ro
+      - ./sql/shard-b-replica.sql:/docker-entrypoint-initdb.d/20-node.sql:ro
+    healthcheck: *postgres-healthcheck
+
+  adminer:
+    image: adminer:standalone
+    profiles:
+      - tools
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-shard-a-primary
+    ports:
+      - "58082:8080"
+    depends_on:
+      postgres-shard-a-primary:
+        condition: service_healthy
+      postgres-shard-b-primary:
+        condition: service_healthy
+      postgres-shard-b-replica:
+        condition: service_healthy
+
+volumes:
+  shard-a-primary-data:
+  shard-b-primary-data:
+  shard-b-replica-data:
