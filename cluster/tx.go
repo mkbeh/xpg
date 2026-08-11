@@ -22,8 +22,12 @@ func (c *Cluster) InPrimaryTx(
 	options pgx.TxOptions,
 	fn func(context.Context, pgx.Tx) error,
 ) error {
-	if c == nil || c.primary == nil {
-		return errors.New("xpg/cluster: cluster is not initialized")
+	if c == nil {
+		return errors.New("xpg/cluster: cluster is nil")
+	}
+
+	if c.primary == nil {
+		return ErrNoPrimary
 	}
 
 	return c.primary.InTx(ctx, options, fn)

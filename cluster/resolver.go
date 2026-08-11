@@ -63,30 +63,46 @@ func (policy ReadPolicy) String() string {
 
 // ReadPool returns a pool for a read operation according to policy.
 //
-// ReadReplicaPreferred falls back to the primary only when replica selection
-// returns ErrNoReplica. Other selector errors are returned to the caller.
+// ReadReplicaPreferred falls back to the primary when no replica can be
+// selected. If the cluster has no primary, it returns ErrNoPrimary.
+// Other selector errors are returned to the caller.
 func (c *Cluster) ReadPool(ctx context.Context, policy ReadPolicy) (*xpg.Pool, error) {
-	if c == nil || c.primary == nil {
+	if c == nil {
 		return nil, errors.New("xpg/cluster: cluster is nil")
 	}
 
 	switch policy {
 	case ReadPrimary:
+		if c.primary == nil {
+			return nil, ErrNoPrimary
+		}
+
 		return c.primary, nil
 
 	case ReadReplicaPreferred:
 		replica, err := c.selectReplica(ctx)
-		if errors.Is(err, ErrNoReplica) {
-			return c.primary, nil
+		if err == nil {
+			return replica, nil
 		}
 
-		return replica, err
+		if !errors.Is(err, ErrNoReplica) {
+			return nil, err
+		}
+
+		if c.primary == nil {
+			return nil, ErrNoPrimary
+		}
+
+		return c.primary, nil
 
 	case ReadReplicaRequired:
 		return c.selectReplica(ctx)
 
 	default:
-		return nil, fmt.Errorf("xpg/cluster: unsupported read policy %d", policy)
+		return nil, fmt.Errorf(
+			"xpg/cluster: unsupported read policy %d",
+			policy,
+		)
 	}
 }
 
