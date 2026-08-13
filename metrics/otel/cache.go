@@ -191,12 +191,12 @@ func (instruments cacheMetricInstruments) observe(
 	)
 	observer.ObserveInt64(
 		instruments.invalidationCount,
-		stats.InvalidationCount,
+		stats.InvalidatedKeyCount,
 		attributes.invalidateKeys,
 	)
 	observer.ObserveInt64(
 		instruments.invalidationCount,
-		stats.InvalidateAllCount,
+		stats.InvalidatedAllCount,
 		attributes.invalidateAll,
 	)
 	observer.ObserveInt64(
@@ -339,9 +339,9 @@ func newCacheMetricInstruments(meter metric.Meter) (cacheMetricInstruments, erro
 	instruments.invalidationCount, err = meter.Int64ObservableCounter(
 		cacheInvalidationMetricName,
 		metric.WithDescription(
-			"The cumulative number of explicit cache invalidation operations by scope.",
+			"The cumulative number of resident cache entries removed by explicit invalidation, by scope.",
 		),
-		metric.WithUnit("{operation}"),
+		metric.WithUnit("{entry}"),
 	)
 	if err != nil {
 		return cacheMetricInstruments{}, fmt.Errorf(

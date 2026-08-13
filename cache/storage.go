@@ -86,13 +86,6 @@ func newStorageWithSegments[V any](maxEntries, segmentCount int) *storage[V] {
 	}
 }
 
-func (storage *storage[V]) get(
-	key string,
-	now time.Time,
-) (cachedValue[V], bool) {
-	return storage.getAt(storage.segmentIndex(key), key, now, nil)
-}
-
 func (storage *storage[V]) lookupAt(
 	index int,
 	key string,
@@ -111,14 +104,6 @@ func (storage *storage[V]) getAt(
 	return storage.segments[index].get(key, now, stats)
 }
 
-func (storage *storage[V]) set(
-	key string,
-	value cachedValue[V],
-	expiresAt time.Time,
-) {
-	storage.setAt(storage.segmentIndex(key), key, value, expiresAt, nil)
-}
-
 func (storage *storage[V]) setAt(
 	index int,
 	key string,
@@ -129,21 +114,21 @@ func (storage *storage[V]) setAt(
 	storage.segments[index].set(key, value, expiresAt, stats)
 }
 
-func (storage *storage[V]) delete(key string) {
-	storage.deleteAt(storage.segmentIndex(key), key)
-}
-
 func (storage *storage[V]) deleteAt(
 	index int,
 	key string,
-) {
-	storage.segments[index].delete(key)
+) bool {
+	return storage.segments[index].delete(key)
 }
 
-func (storage *storage[V]) deleteAll() {
+func (storage *storage[V]) deleteAll() int64 {
+	var deleted int64
+
 	for index := range storage.segments {
-		storage.segments[index].deleteAll()
+		deleted += storage.segments[index].deleteAll()
 	}
+
+	return deleted
 }
 
 func (storage *storage[V]) segmentIndex(key string) int {
@@ -289,26 +274,32 @@ func (segment *storageSegment[V]) set(
 	segment.pushFrontLocked(item)
 }
 
-func (segment *storageSegment[V]) delete(key string) {
+func (segment *storageSegment[V]) delete(key string) bool {
 	segment.mu.Lock()
 	defer segment.mu.Unlock()
 
 	item, ok := segment.entries[key]
 	if !ok {
-		return
+		return false
 	}
 
 	segment.removeLocked(item)
+
+	return true
 }
 
-func (segment *storageSegment[V]) deleteAll() {
+func (segment *storageSegment[V]) deleteAll() int64 {
 	segment.mu.Lock()
 	defer segment.mu.Unlock()
+
+	deleted := int64(len(segment.entries))
 
 	clear(segment.entries)
 
 	segment.head = nil
 	segment.tail = nil
+
+	return deleted
 }
 
 func (segment *storageSegment[V]) removeLocked(item *entry[V]) {

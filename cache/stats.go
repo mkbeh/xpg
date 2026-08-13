@@ -61,11 +61,17 @@ type Stats struct {
 
 	// Invalidation lifecycle.
 
-	// InvalidationCount is the cumulative number of non-empty Invalidate calls.
-	InvalidationCount int64
+	// InvalidatedKeyCount is the cumulative number of resident entries removed by
+	// Invalidate. Missing keys and duplicate keys that were already removed do not
+	// increase the count.
+	InvalidatedKeyCount int64
 
-	// InvalidateAllCount is the cumulative number of InvalidateAll calls.
-	InvalidateAllCount int64
+	// InvalidatedAllCount is the cumulative number of resident entries removed by
+	// InvalidateAll.
+	//
+	// Because expiration is lazy, this may include physically resident entries
+	// whose TTL had already expired but which had not yet been accessed.
+	InvalidatedAllCount int64
 
 	// Storage lifecycle.
 
@@ -82,11 +88,8 @@ type Stats struct {
 //
 // Each shard corresponds to one storage and coordination segment.
 type statsCollector struct {
-	shards []statsShard
-
-	// InvalidateAll is cache-wide and expected to be rare, so keeping this
-	// counter global does not introduce meaningful contention.
-	invalidateAllCount atomic.Int64
+	shards              []statsShard
+	invalidatedAllCount atomic.Int64
 }
 
 type statsShard struct {
@@ -103,10 +106,10 @@ type statsShard struct {
 	loadErrorCount    atomic.Int64
 	loadDurationNanos atomic.Int64
 
-	// These events are observed without a suitable existing lock.
-	// Counters are sharded to avoid a single global hot cache line.
-	sharedCount       atomic.Int64
-	invalidationCount atomic.Int64
+	sharedCount atomic.Int64
+
+	// Sharded to avoid a global hot cache line.
+	invalidatedKeyCount atomic.Int64
 }
 
 func newStatsCollector(segmentCount int) *statsCollector {
@@ -122,9 +125,9 @@ func (cache *Cache[V]) Stats() Stats {
 	}
 
 	snapshot := Stats{
-		MaxEntries:         int64(cache.store.maxEntries),
-		SegmentCount:       int64(len(cache.store.segments)),
-		InvalidateAllCount: cache.stats.invalidateAllCount.Load(),
+		MaxEntries:          int64(cache.store.maxEntries),
+		SegmentCount:        int64(len(cache.store.segments)),
+		InvalidatedAllCount: cache.stats.invalidatedAllCount.Load(),
 	}
 
 	for index := range cache.store.segments {
@@ -149,7 +152,7 @@ func (cache *Cache[V]) Stats() Stats {
 		snapshot.LoadErrorCount += shard.loadErrorCount.Load()
 		snapshot.LoadDuration += time.Duration(shard.loadDurationNanos.Load())
 		snapshot.SharedCount += shard.sharedCount.Load()
-		snapshot.InvalidationCount += shard.invalidationCount.Load()
+		snapshot.InvalidatedKeyCount += shard.invalidatedKeyCount.Load()
 	}
 
 	return snapshot
@@ -180,10 +183,18 @@ func (stats *statsCollector) recordShared(index int) {
 	stats.shard(index).sharedCount.Add(1)
 }
 
-func (stats *statsCollector) recordInvalidation(index int) {
-	stats.shard(index).invalidationCount.Add(1)
+func (stats *statsCollector) recordKeyInvalidation(index int, count int64) {
+	if count <= 0 {
+		return
+	}
+
+	stats.shard(index).invalidatedKeyCount.Add(count)
 }
 
-func (stats *statsCollector) recordInvalidateAll() {
-	stats.invalidateAllCount.Add(1)
+func (stats *statsCollector) recordAllInvalidation(count int64) {
+	if count <= 0 {
+		return
+	}
+
+	stats.invalidatedAllCount.Add(count)
 }

@@ -126,10 +126,7 @@ func (cache *Cache[V]) GetOrLoad(
 			// Another caller may have populated the cache between the initial
 			// lookup and this call becoming the singleflight owner.
 			if cached, ok := cache.store.getAt(index, key, time.Now(), cache.stats.shard(index)); ok {
-				return loadResult[V]{
-					value: cached.value,
-					found: cached.found,
-				}, nil
+				return loadResult[V](cached), nil
 			}
 
 			startedAt := time.Now()
@@ -206,8 +203,9 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 	if len(keys) == 1 {
 		index := cache.store.segmentIndex(keys[0])
 
-		cache.invalidateOne(index, keys[0])
-		cache.stats.recordInvalidation(index)
+		if cache.invalidateOne(index, keys[0]) {
+			cache.stats.recordKeyInvalidation(index, 1)
+		}
 
 		return
 	}
@@ -222,8 +220,8 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 	}
 
 	// Keep the statistics shard based on the caller's first key rather than
-	// the sorted target order. One non-empty Invalidate call contributes one
-	// operation regardless of how many keys it contains.
+	// the sorted target order. The shard records the total number of resident
+	// entries actually removed by this batch.
 	statsIndex := targets[0].index
 
 	// Every invalidation path acquires state locks in ascending segment order.
@@ -262,12 +260,16 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 		previous = target.index
 	}
 
+	var invalidated int64
+
 	for _, target := range targets {
 		state := &cache.states[target.index]
 
 		state.group.Forget(target.key)
 
-		cache.store.deleteAt(target.index, target.key)
+		if cache.store.deleteAt(target.index, target.key) {
+			invalidated++
+		}
 	}
 
 	previous = -1
@@ -284,7 +286,7 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 		previous = target.index
 	}
 
-	cache.stats.recordInvalidation(statsIndex)
+	cache.stats.recordKeyInvalidation(statsIndex, invalidated)
 }
 
 func (cache *Cache[V]) InvalidateAll() {
@@ -303,19 +305,19 @@ func (cache *Cache[V]) InvalidateAll() {
 		state.group = &singleflight.Group{}
 	}
 
-	cache.store.deleteAll()
+	invalidated := cache.store.deleteAll()
 
 	for index := len(cache.states) - 1; index >= 0; index-- {
 		cache.states[index].mu.Unlock()
 	}
 
-	cache.stats.recordInvalidateAll()
+	cache.stats.recordAllInvalidation(invalidated)
 }
 
 func (cache *Cache[V]) invalidateOne(
 	index int,
 	key string,
-) {
+) bool {
 	state := &cache.states[index]
 
 	state.mu.Lock()
@@ -323,9 +325,11 @@ func (cache *Cache[V]) invalidateOne(
 	state.generation++
 	state.group.Forget(key)
 
-	cache.store.deleteAt(index, key)
+	removed := cache.store.deleteAt(index, key)
 
 	state.mu.Unlock()
+
+	return removed
 }
 
 func (cache *Cache[V]) storeLoaded(
