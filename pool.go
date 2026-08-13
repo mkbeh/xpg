@@ -14,7 +14,7 @@ import (
 // Pool is a concurrency-safe PostgreSQL connection pool backed by pgxpool.
 type Pool struct {
 	pool    *pgxpool.Pool
-	metrics PoolMetricsRegistration
+	metrics MetricsRegistration
 
 	name   string
 	labels map[string]string
@@ -127,7 +127,7 @@ func (p *Pool) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNam
 	return p.pool.CopyFrom(ctx, tableName, columnNames, rowSrc)
 }
 
-func (p *Pool) registerMetrics(metrics PoolMetrics) error {
+func (p *Pool) registerMetrics(metrics Metrics) error {
 	if metrics == nil {
 		return nil
 	}

@@ -25,7 +25,7 @@ func (option optionFunc) apply(settings *settings) error {
 type settings struct {
 	name    string
 	labels  map[string]string
-	metrics PoolMetrics
+	metrics Metrics
 }
 
 func (s settings) poolName(host string, port uint16, database string) string {
@@ -122,7 +122,7 @@ func WithLabel(key, value string) Option {
 //
 // Metrics are registered during New and unregistered automatically when the
 // Pool is closed.
-func WithMetrics(metrics PoolMetrics) Option {
+func WithMetrics(metrics Metrics) Option {
 	return optionFunc(func(settings *settings) error {
 		if metrics == nil {
 			return errors.New("pool metrics is nil")

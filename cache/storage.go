@@ -25,8 +25,9 @@ type entry[V any] struct {
 type storage[V any] struct {
 	seed maphash.Seed
 
-	segments []storageSegment[V]
-	mask     uint64
+	segments   []storageSegment[V]
+	mask       uint64
+	maxEntries int
 }
 
 type storageSegment[V any] struct {
@@ -40,10 +41,7 @@ type storageSegment[V any] struct {
 	maxEntries int
 }
 
-func newStorage[V any](
-	maxEntries,
-	segmentCount int,
-) *storage[V] {
+func newStorage[V any](maxEntries, segmentCount int) *storage[V] {
 	if maxEntries == 0 {
 		maxEntries = defaultMaxEntries
 	}
@@ -81,9 +79,10 @@ func newStorageWithSegments[V any](maxEntries, segmentCount int) *storage[V] {
 	}
 
 	return &storage[V]{
-		seed:     maphash.MakeSeed(),
-		segments: segments,
-		mask:     mask,
+		seed:       maphash.MakeSeed(),
+		segments:   segments,
+		mask:       mask,
+		maxEntries: maxEntries,
 	}
 }
 
@@ -91,22 +90,25 @@ func (storage *storage[V]) get(
 	key string,
 	now time.Time,
 ) (cachedValue[V], bool) {
-	return storage.getAt(
-		storage.segmentIndex(key),
-		key,
-		now,
-	)
+	return storage.getAt(storage.segmentIndex(key), key, now, nil)
+}
+
+func (storage *storage[V]) lookupAt(
+	index int,
+	key string,
+	now time.Time,
+	stats *statsShard,
+) (cachedValue[V], bool) {
+	return storage.segments[index].lookup(key, now, stats)
 }
 
 func (storage *storage[V]) getAt(
 	index int,
 	key string,
 	now time.Time,
+	stats *statsShard,
 ) (cachedValue[V], bool) {
-	return storage.segments[index].get(
-		key,
-		now,
-	)
+	return storage.segments[index].get(key, now, stats)
 }
 
 func (storage *storage[V]) set(
@@ -114,12 +116,7 @@ func (storage *storage[V]) set(
 	value cachedValue[V],
 	expiresAt time.Time,
 ) {
-	storage.setAt(
-		storage.segmentIndex(key),
-		key,
-		value,
-		expiresAt,
-	)
+	storage.setAt(storage.segmentIndex(key), key, value, expiresAt, nil)
 }
 
 func (storage *storage[V]) setAt(
@@ -127,19 +124,13 @@ func (storage *storage[V]) setAt(
 	key string,
 	value cachedValue[V],
 	expiresAt time.Time,
+	stats *statsShard,
 ) {
-	storage.segments[index].set(
-		key,
-		value,
-		expiresAt,
-	)
+	storage.segments[index].set(key, value, expiresAt, stats)
 }
 
 func (storage *storage[V]) delete(key string) {
-	storage.deleteAt(
-		storage.segmentIndex(key),
-		key,
-	)
+	storage.deleteAt(storage.segmentIndex(key), key)
 }
 
 func (storage *storage[V]) deleteAt(
@@ -171,13 +162,50 @@ func (storage *storage[V]) segmentIndex(key string) int {
 	)
 }
 
-func (segment *storageSegment[V]) get(
+func (segment *storageSegment[V]) lookup(
 	key string,
 	now time.Time,
+	stats *statsShard,
 ) (cachedValue[V], bool) {
 	segment.mu.Lock()
 	defer segment.mu.Unlock()
 
+	cached, ok := segment.getLocked(key, now, stats)
+	if !ok {
+		if stats != nil {
+			stats.missCount++
+		}
+
+		return cached, false
+	}
+
+	if stats != nil {
+		if cached.found {
+			stats.hitCount++
+		} else {
+			stats.negativeHitCount++
+		}
+	}
+
+	return cached, true
+}
+
+func (segment *storageSegment[V]) get(
+	key string,
+	now time.Time,
+	stats *statsShard,
+) (cachedValue[V], bool) {
+	segment.mu.Lock()
+	defer segment.mu.Unlock()
+
+	return segment.getLocked(key, now, stats)
+}
+
+func (segment *storageSegment[V]) getLocked(
+	key string,
+	now time.Time,
+	stats *statsShard,
+) (cachedValue[V], bool) {
 	item, ok := segment.entries[key]
 	if !ok {
 		var zero cachedValue[V]
@@ -189,6 +217,10 @@ func (segment *storageSegment[V]) get(
 	// accessed; there is no background or opportunistic expiration sweep.
 	if !now.Before(item.expiresAt) {
 		segment.removeLocked(item)
+
+		if stats != nil {
+			stats.expirationCount++
+		}
 
 		var zero cachedValue[V]
 
@@ -205,6 +237,7 @@ func (segment *storageSegment[V]) set(
 	key string,
 	value cachedValue[V],
 	expiresAt time.Time,
+	stats *statsShard,
 ) {
 	// A zero-capacity segment is possible when the caller explicitly chooses
 	// more segments than MaxEntries. Such a segment simply stores nothing.
@@ -227,6 +260,10 @@ func (segment *storageSegment[V]) set(
 	// Once the segment reaches capacity, reuse its LRU victim instead of
 	// allocating another entry.
 	if len(segment.entries) >= segment.maxEntries {
+		if stats != nil {
+			stats.evictionCount++
+		}
+
 		item := segment.tail
 
 		delete(segment.entries, item.key)
@@ -252,9 +289,7 @@ func (segment *storageSegment[V]) set(
 	segment.pushFrontLocked(item)
 }
 
-func (segment *storageSegment[V]) delete(
-	key string,
-) {
+func (segment *storageSegment[V]) delete(key string) {
 	segment.mu.Lock()
 	defer segment.mu.Unlock()
 
@@ -276,17 +311,13 @@ func (segment *storageSegment[V]) deleteAll() {
 	segment.tail = nil
 }
 
-func (segment *storageSegment[V]) removeLocked(
-	item *entry[V],
-) {
+func (segment *storageSegment[V]) removeLocked(item *entry[V]) {
 	delete(segment.entries, item.key)
 
 	segment.unlinkLocked(item)
 }
 
-func (segment *storageSegment[V]) pushFrontLocked(
-	item *entry[V],
-) {
+func (segment *storageSegment[V]) pushFrontLocked(item *entry[V]) {
 	item.previous = nil
 	item.next = segment.head
 
@@ -299,9 +330,7 @@ func (segment *storageSegment[V]) pushFrontLocked(
 	segment.head = item
 }
 
-func (segment *storageSegment[V]) moveToFrontLocked(
-	item *entry[V],
-) {
+func (segment *storageSegment[V]) moveToFrontLocked(item *entry[V]) {
 	if segment.head == item {
 		return
 	}
@@ -310,9 +339,7 @@ func (segment *storageSegment[V]) moveToFrontLocked(
 	segment.pushFrontLocked(item)
 }
 
-func (segment *storageSegment[V]) unlinkLocked(
-	item *entry[V],
-) {
+func (segment *storageSegment[V]) unlinkLocked(item *entry[V]) {
 	if item.previous != nil {
 		item.previous.next = item.next
 	} else {

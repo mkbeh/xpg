@@ -2,12 +2,13 @@ package cache
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"time"
 )
 
 const (
-	maxDuration       = time.Duration(1<<63 - 1)
+	maxDuration       = time.Duration(math.MaxInt64)
 	defaultMaxEntries = 10_000
 )
 
@@ -41,6 +42,10 @@ type Config struct {
 	// NegativeTTL is the lifetime of cached negative results.
 	// Zero disables negative caching.
 	NegativeTTL time.Duration
+
+	// Metrics optionally registers cache statistics during New.
+	// The registration is released when Cache.Close is called.
+	Metrics Metrics
 }
 
 func (config Config) validate() error {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"slices"
 	"sync"
@@ -12,14 +13,15 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// Cache is a concurrency-safe bounded in-process cache.
-//
-// Cache must be created with New and must not be copied after first use.
 type Cache[V any] struct {
 	name string
 
 	store  *storage[V]
 	states []cacheState
+	stats  *statsCollector
+
+	metrics   MetricsRegistration
+	closeOnce sync.Once
 
 	ttl         time.Duration
 	jitter      time.Duration
@@ -27,8 +29,6 @@ type Cache[V any] struct {
 }
 
 type cacheState struct {
-	// mu serializes invalidation with singleflight registration and cache
-	// publication for keys routed to this state segment.
 	mu sync.RWMutex
 
 	generation uint64
@@ -40,7 +40,6 @@ type invalidationTarget struct {
 	index int
 }
 
-// New creates a bounded in-process cache.
 func New[V any](config Config) (*Cache[V], error) {
 	if err := config.validate(); err != nil {
 		return nil, err
@@ -48,17 +47,25 @@ func New[V any](config Config) (*Cache[V], error) {
 
 	store := newStorage[V](config.MaxEntries, config.Segments)
 
-	return &Cache[V]{
-		name:        config.Name,
-		store:       store,
-		states:      newCacheStates(len(store.segments)),
+	cache := &Cache[V]{
+		name: config.Name,
+
+		store:  store,
+		states: newCacheStates(len(store.segments)),
+		stats:  newStatsCollector(len(store.segments)),
+
 		ttl:         config.TTL,
 		jitter:      config.Jitter,
 		negativeTTL: config.NegativeTTL,
-	}, nil
+	}
+
+	if err := cache.registerMetrics(config.Metrics); err != nil {
+		return nil, fmt.Errorf("xpg/cache: register metrics: %w", err)
+	}
+
+	return cache, nil
 }
 
-// Name returns the configured cache name.
 func (cache *Cache[V]) Name() string {
 	if cache == nil {
 		return ""
@@ -67,15 +74,20 @@ func (cache *Cache[V]) Name() string {
 	return cache.name
 }
 
-// GetOrLoad returns a cached value or executes loader on a cache miss.
-//
-// Concurrent misses for the same key share the loader started by the first
-// caller. Each caller may stop waiting through its own context.
-//
-// The context of the caller that starts the shared load controls the loader.
-//
-// found=false represents a negative result. Negative results are cached only
-// when Config.NegativeTTL is greater than zero. Loader errors are never cached.
+func (cache *Cache[V]) Close() {
+	if cache == nil {
+		return
+	}
+
+	cache.closeOnce.Do(
+		func() {
+			if cache.metrics != nil {
+				cache.metrics.Close()
+			}
+		},
+	)
+}
+
 func (cache *Cache[V]) GetOrLoad(
 	ctx context.Context,
 	key string,
@@ -92,8 +104,9 @@ func (cache *Cache[V]) GetOrLoad(
 	}
 
 	index := cache.store.segmentIndex(key)
+	stats := cache.stats.shard(index)
 
-	if cached, ok := cache.store.getAt(index, key, time.Now()); ok {
+	if cached, ok := cache.store.lookupAt(index, key, time.Now(), stats); ok {
 		return cached.value, cached.found, nil
 	}
 
@@ -112,20 +125,29 @@ func (cache *Cache[V]) GetOrLoad(
 		func() (any, error) {
 			// Another caller may have populated the cache between the initial
 			// lookup and this call becoming the singleflight owner.
-			if cached, ok := cache.store.getAt(index, key, time.Now()); ok {
+			if cached, ok := cache.store.getAt(index, key, time.Now(), cache.stats.shard(index)); ok {
 				return loadResult[V]{
 					value: cached.value,
 					found: cached.found,
 				}, nil
 			}
 
+			startedAt := time.Now()
+
 			value, found, err := loader(ctx)
+
+			finishedAt := time.Now()
+
+			cache.stats.recordLoad(index, found, err, finishedAt.Sub(startedAt))
+
 			if err != nil {
 				return nil, err
 			}
 
 			if !found {
-				value = zero
+				var zeroValue V
+
+				value = zeroValue
 			}
 
 			loaded := loadResult[V]{
@@ -137,13 +159,15 @@ func (cache *Cache[V]) GetOrLoad(
 			// invalidation for this state segment. A pre-invalidation load may
 			// still return to callers that already joined it, but cannot
 			// repopulate the cache after the barrier.
-			state.mu.RLock()
+			publishState := &cache.states[index]
 
-			if state.generation == generation {
-				cache.storeLoaded(index, key, loaded)
+			publishState.mu.RLock()
+
+			if publishState.generation == generation {
+				cache.storeLoaded(index, key, loaded, finishedAt)
 			}
 
-			state.mu.RUnlock()
+			publishState.mu.RUnlock()
 
 			return loaded, nil
 		},
@@ -156,6 +180,10 @@ func (cache *Cache[V]) GetOrLoad(
 		return zero, false, ctx.Err()
 
 	case result := <-resultChannel:
+		if result.Shared {
+			cache.stats.recordShared(index)
+		}
+
 		if result.Err != nil {
 			return zero, false, result.Err
 		}
@@ -169,19 +197,18 @@ func (cache *Cache[V]) GetOrLoad(
 	}
 }
 
-// Invalidate removes keys from the cache and prevents loads registered before
-// the invalidation from repopulating them.
-//
-// Already running loaders are not canceled. Callers already waiting for such a
-// loader may still receive its result.
 func (cache *Cache[V]) Invalidate(keys ...string) {
-	if !cache.initialized() || len(keys) == 0 {
+	if !cache.initialized() ||
+		len(keys) == 0 {
 		return
 	}
 
-	// Keep the common single-key path allocation-free.
 	if len(keys) == 1 {
-		cache.invalidateOne(keys[0])
+		index := cache.store.segmentIndex(keys[0])
+
+		cache.invalidateOne(index, keys[0])
+		cache.stats.recordInvalidation(index)
+
 		return
 	}
 
@@ -193,6 +220,11 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 			index: cache.store.segmentIndex(key),
 		}
 	}
+
+	// Keep the statistics shard based on the caller's first key rather than
+	// the sorted target order. One non-empty Invalidate call contributes one
+	// operation regardless of how many keys it contains.
+	statsIndex := targets[0].index
 
 	// Every invalidation path acquires state locks in ascending segment order.
 	// This keeps multi-key invalidation and InvalidateAll deadlock-free.
@@ -211,6 +243,7 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 		}
 
 		cache.states[target.index].mu.Lock()
+
 		previous = target.index
 	}
 
@@ -225,15 +258,15 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 		}
 
 		cache.states[target.index].generation++
+
 		previous = target.index
 	}
 
 	for _, target := range targets {
 		state := &cache.states[target.index]
 
-		// Forget ensures callers registered after this invalidation cannot join
-		// the pre-invalidation flight for key.
 		state.group.Forget(target.key)
+
 		cache.store.deleteAt(target.index, target.key)
 	}
 
@@ -241,28 +274,24 @@ func (cache *Cache[V]) Invalidate(keys ...string) {
 
 	for index := len(targets) - 1; index >= 0; index-- {
 		target := targets[index]
+
 		if target.index == previous {
 			continue
 		}
 
 		cache.states[target.index].mu.Unlock()
+
 		previous = target.index
 	}
+
+	cache.stats.recordInvalidation(statsIndex)
 }
 
-// InvalidateAll removes every cached entry and detaches future callers from all
-// currently running singleflight calls.
-//
-// Existing loaders continue for callers that already joined them, but their
-// results cannot repopulate the cache.
 func (cache *Cache[V]) InvalidateAll() {
 	if !cache.initialized() {
 		return
 	}
 
-	// Lock every state in a stable order. InvalidateAll is intentionally a
-	// cache-wide barrier and is expected to be rare compared with key-scoped
-	// invalidation.
 	for index := range cache.states {
 		cache.states[index].mu.Lock()
 	}
@@ -271,9 +300,6 @@ func (cache *Cache[V]) InvalidateAll() {
 		state := &cache.states[index]
 
 		state.generation++
-
-		// singleflight.Group has no ForgetAll operation. Existing callers retain
-		// the old group while future callers use this new group.
 		state.group = &singleflight.Group{}
 	}
 
@@ -282,18 +308,21 @@ func (cache *Cache[V]) InvalidateAll() {
 	for index := len(cache.states) - 1; index >= 0; index-- {
 		cache.states[index].mu.Unlock()
 	}
+
+	cache.stats.recordInvalidateAll()
 }
 
 func (cache *Cache[V]) invalidateOne(
+	index int,
 	key string,
 ) {
-	index := cache.store.segmentIndex(key)
 	state := &cache.states[index]
 
 	state.mu.Lock()
 
 	state.generation++
 	state.group.Forget(key)
+
 	cache.store.deleteAt(index, key)
 
 	state.mu.Unlock()
@@ -303,9 +332,8 @@ func (cache *Cache[V]) storeLoaded(
 	index int,
 	key string,
 	loaded loadResult[V],
+	now time.Time,
 ) {
-	now := time.Now()
-
 	switch {
 	case loaded.found:
 		cache.store.setAt(
@@ -316,6 +344,7 @@ func (cache *Cache[V]) storeLoaded(
 				found: true,
 			},
 			now.Add(cache.effectiveTTL()),
+			cache.stats.shard(index),
 		)
 
 	case cache.negativeTTL > 0:
@@ -326,6 +355,7 @@ func (cache *Cache[V]) storeLoaded(
 				found: false,
 			},
 			now.Add(cache.negativeTTL),
+			cache.stats.shard(index),
 		)
 	}
 }
@@ -336,16 +366,33 @@ func (cache *Cache[V]) effectiveTTL() time.Duration {
 	}
 
 	return cache.ttl + time.Duration(
-		rand.Int64N(
-			int64(cache.jitter),
-		),
+		rand.Int64N(int64(cache.jitter)),
 	)
+}
+
+func (cache *Cache[V]) registerMetrics(metrics Metrics) error {
+	if metrics == nil {
+		return nil
+	}
+
+	registration, err := metrics.RegisterCache(cache)
+	if err != nil {
+		return err
+	}
+
+	cache.metrics = registration
+
+	return nil
 }
 
 func (cache *Cache[V]) initialized() bool {
 	return cache != nil &&
 		cache.store != nil &&
-		len(cache.states) == len(cache.store.segments)
+		cache.stats != nil &&
+		len(cache.states) ==
+			len(cache.store.segments) &&
+		len(cache.stats.shards) ==
+			len(cache.store.segments)
 }
 
 func newCacheStates(count int) []cacheState {

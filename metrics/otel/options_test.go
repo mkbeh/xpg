@@ -2,56 +2,70 @@ package xpgotel
 
 import (
 	"context"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mkbeh/xpg"
+	xpgcache "github.com/mkbeh/xpg/cache"
 	"go.opentelemetry.io/otel/metric/noop"
 )
 
-func TestWithMetrics(t *testing.T) {
+func TestMetricsRegistration(t *testing.T) {
 	t.Parallel()
 
-	config, err := pgxpool.ParseConfig("")
+	metrics := NewMetrics(
+		WithMeterProvider(noop.NewMeterProvider()),
+	)
+
+	poolConfig, err := pgxpool.ParseConfig("")
 	if err != nil {
 		t.Fatalf("parse pool config: %v", err)
 	}
 
 	pool, err := xpg.New(
 		context.Background(),
-		config,
-		xpg.WithName("test"),
-		WithMetrics(
-			WithMeterProvider(noop.NewMeterProvider()),
-		),
+		poolConfig,
+		xpg.WithName("test-pool"),
+		xpg.WithMetrics(metrics),
 	)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
+	pool.Close()
+	pool.Close()
 
-	pool.Close()
-	pool.Close()
+	cache, err := xpgcache.New[int](
+		xpgcache.Config{
+			Name:    "test-cache",
+			TTL:     time.Minute,
+			Metrics: metrics,
+		},
+	)
+	if err != nil {
+		t.Fatalf("create cache: %v", err)
+	}
+	cache.Close()
+	cache.Close()
 }
 
-func TestWithMetricsNilProvider(t *testing.T) {
+func TestWithMeterProviderNilUsesGlobalProvider(t *testing.T) {
 	t.Parallel()
 
-	config, err := pgxpool.ParseConfig("")
+	metrics := NewMetrics(
+		WithMeterProvider(nil),
+	)
+
+	cache, err := xpgcache.New[int](
+		xpgcache.Config{
+			Name:    "test-cache",
+			TTL:     time.Minute,
+			Metrics: metrics,
+		},
+	)
 	if err != nil {
-		t.Fatalf("parse pool config: %v", err)
+		t.Fatalf("create cache: %v", err)
 	}
 
-	pool, err := xpg.New(
-		context.Background(),
-		config,
-		WithMetrics(WithMeterProvider(nil)),
-	)
-	if pool != nil {
-		pool.Close()
-		t.Fatal("New returned a pool with a nil MeterProvider")
-	}
-	if err == nil || !strings.Contains(err.Error(), "meter provider is nil") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	cache.Close()
 }
