@@ -4,7 +4,7 @@
 
 **Lightweight PostgreSQL wrapper for Go, built on top of [pgx](https://github.com/jackc/pgx).**
 
-![Go Version](https://img.shields.io/badge/go-1.26%2B-blue)
+![Go Version](https://img.shields.io/badge/go-1.27%2B-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 </div>
