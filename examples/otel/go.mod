@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/mkbeh/xpg v0.2.0
+	github.com/mkbeh/xpg/extra/otelxpg v0.1.0
 	github.com/prometheus/client_golang v1.24.1
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/prometheus v0.67.0

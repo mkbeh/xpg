@@ -1,4 +1,4 @@
-package xpgotel
+package otelxpg
 
 import (
 	"go.opentelemetry.io/otel/metric"
@@ -24,7 +24,7 @@ type metricsSettings struct {
 // NewMetrics creates an OpenTelemetry metrics implementation.
 //
 // By default, metrics use the global OpenTelemetry MeterProvider. The returned
-// value is immutable and may be reused for multiple pools and caches.
+// value is immutable and may be reused for multiple pools.
 func NewMetrics(options ...MetricsOption) *Metrics {
 	settings := metricsSettings{}
 
@@ -44,7 +44,7 @@ func NewMetrics(options ...MetricsOption) *Metrics {
 // WithMeterProvider configures the MeterProvider used for metrics.
 //
 // The caller owns the provider and must shut it down after all instrumented
-// pools and caches have been closed.
+// pools have been closed.
 func WithMeterProvider(provider metric.MeterProvider) MetricsOption {
 	return metricsOptionFunc(func(settings *metricsSettings) {
 		if provider != nil {

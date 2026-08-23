@@ -1,4 +1,4 @@
-module github.com/mkbeh/xpg/metrics/otel
+module github.com/mkbeh/xpg/extra/otelxpg
 
 go 1.26
 

@@ -1,4 +1,4 @@
-package xpgotel
+package otelxpg
 
 import (
 	"context"
@@ -70,7 +70,7 @@ var _ xpg.Metrics = (*Metrics)(nil)
 // Register registers metrics for one xpg Pool.
 func (m *Metrics) Register(pool *xpg.Pool) (xpg.MetricsRegistration, error) {
 	if m == nil {
-		return nil, errors.New("xpg/otel: metrics is nil")
+		return nil, errors.New("otelxpg: metrics is nil")
 	}
 
 	provider := m.meterProvider
@@ -104,7 +104,7 @@ func registerPoolMetrics(pool *xpg.Pool, provider metric.MeterProvider) (xpg.Met
 		instruments.observables()...,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("xpg/otel: register pool metrics callback: %w", err)
+		return nil, fmt.Errorf("otelxpg: register pool metrics callback: %w", err)
 	}
 
 	return &metricsRegistration{
@@ -219,7 +219,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionCountMetricName,
 			err,
 		)
@@ -234,7 +234,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionMaxMetricName,
 			err,
 		)
@@ -249,7 +249,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionConstructingMetricName,
 			err,
 		)
@@ -264,7 +264,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionAcquireCountMetricName,
 			err,
 		)
@@ -279,7 +279,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionAcquireTimeMetricName,
 			err,
 		)
@@ -294,7 +294,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionAcquireCanceledCountMetricName,
 			err,
 		)
@@ -309,7 +309,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionAcquireEmptyCountMetricName,
 			err,
 		)
@@ -324,7 +324,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionAcquireEmptyWaitTimeMetricName,
 			err,
 		)
@@ -339,7 +339,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionCreateCountMetricName,
 			err,
 		)
@@ -354,7 +354,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	)
 	if err != nil {
 		return poolMetricInstruments{}, fmt.Errorf(
-			"xpg/otel: create %s: %w",
+			"otelxpg: create %s: %w",
 			connectionDestroyCountMetricName,
 			err,
 		)

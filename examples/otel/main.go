@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mkbeh/xpg"
-	xpgotel "github.com/mkbeh/xpg/metrics/otel"
+	"github.com/mkbeh/xpg/extra/otelxpg"
 )
 
 const (
@@ -59,7 +59,7 @@ func run(ctx context.Context) (runErr error) {
 		xpg.WithName("otel-example"),
 		xpg.WithLabel("xpg.pool.role", "primary"),
 		xpg.WithMetrics(
-			xpgotel.NewMetrics(),
+			otelxpg.NewMetrics(),
 		),
 	)
 	if err != nil {
