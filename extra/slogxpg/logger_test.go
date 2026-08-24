@@ -16,20 +16,18 @@ func TestNewNil(t *testing.T) {
 	}
 }
 
-func TestLoggerLevels(t *testing.T) {
+func TestSlogLevel(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		pgx     tracelog.LogLevel
-		want    slog.Level
-		wantPGX string
+		name string
+		pgx  tracelog.LogLevel
+		want slog.Level
 	}{
 		{
-			name:    "trace",
-			pgx:     tracelog.LogLevelTrace,
-			want:    slog.LevelDebug - 1,
-			wantPGX: tracelog.LogLevelTrace.String(),
+			name: "trace",
+			pgx:  tracelog.LogLevelTrace,
+			want: slog.LevelDebug - 1,
 		},
 		{
 			name: "debug",
@@ -52,10 +50,9 @@ func TestLoggerLevels(t *testing.T) {
 			want: slog.LevelError,
 		},
 		{
-			name:    "unknown",
-			pgx:     tracelog.LogLevel(255),
-			want:    slog.LevelError,
-			wantPGX: tracelog.LogLevel(255).String(),
+			name: "unknown",
+			pgx:  tracelog.LogLevel(255),
+			want: slog.LevelError,
 		},
 	}
 
@@ -63,45 +60,14 @@ func TestLoggerLevels(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := &captureHandler{}
-			logger := New(slog.New(handler))
-
-			logger.Log(
-				context.Background(),
-				test.pgx,
-				"message",
-				nil,
-			)
-
-			record := handler.record
-
-			if record.Level != test.want {
-				t.Fatalf("level = %v, want %v", record.Level, test.want)
-			}
-
-			attrs := recordAttrs(record)
-
-			if test.wantPGX == "" {
-				if _, ok := attrs[pgxLogLevelKey]; ok {
-					t.Fatalf("unexpected %s attribute", pgxLogLevelKey)
-				}
-
-				return
-			}
-
-			if attrs[pgxLogLevelKey] != test.wantPGX {
-				t.Fatalf(
-					"%s = %v, want %q",
-					pgxLogLevelKey,
-					attrs[pgxLogLevelKey],
-					test.wantPGX,
-				)
+			if got := slogLevel(test.pgx); got != test.want {
+				t.Fatalf("slogLevel(%v) = %v, want %v", test.pgx, got, test.want)
 			}
 		})
 	}
 }
 
-func TestLoggerData(t *testing.T) {
+func TestLoggerLog(t *testing.T) {
 	t.Parallel()
 
 	handler := &captureHandler{}
@@ -123,7 +89,11 @@ func TestLoggerData(t *testing.T) {
 		t.Fatalf("message = %q, want %q", record.Message, "query")
 	}
 
-	attrs := recordAttrs(record)
+	if record.Level != slog.LevelInfo {
+		t.Fatalf("level = %v, want %v", record.Level, slog.LevelInfo)
+	}
+
+	attrs := recordAttrs(&record)
 
 	if attrs["sql"] != "select 1" {
 		t.Fatalf("sql = %v, want %q", attrs["sql"], "select 1")
@@ -131,6 +101,30 @@ func TestLoggerData(t *testing.T) {
 
 	if attrs["args"] != int64(1) {
 		t.Fatalf("args = %v, want %v", attrs["args"], int64(1))
+	}
+}
+
+func TestLoggerUnknownLevel(t *testing.T) {
+	t.Parallel()
+
+	handler := &captureHandler{}
+	logger := New(slog.New(handler))
+
+	logger.Log(
+		context.Background(),
+		tracelog.LogLevel(255),
+		"unknown",
+		nil,
+	)
+
+	record := handler.record
+
+	if record.Message != "unknown" {
+		t.Fatalf("message = %q, want %q", record.Message, "unknown")
+	}
+
+	if record.Level != slog.LevelError {
+		t.Fatalf("level = %v, want %v", record.Level, slog.LevelError)
 	}
 }
 
@@ -142,7 +136,10 @@ func (h *captureHandler) Enabled(context.Context, slog.Level) bool {
 	return true
 }
 
-func (h *captureHandler) Handle(_ context.Context, record slog.Record) error {
+func (h *captureHandler) Handle(
+	_ context.Context,
+	record slog.Record, //nolint:gocritic // slog.Handler requires slog.Record by value.
+) error {
 	h.record = record.Clone()
 
 	return nil
@@ -156,7 +153,7 @@ func (h *captureHandler) WithGroup(string) slog.Handler {
 	return h
 }
 
-func recordAttrs(record slog.Record) map[string]any {
+func recordAttrs(record *slog.Record) map[string]any {
 	attrs := make(map[string]any, record.NumAttrs())
 
 	record.Attrs(func(attr slog.Attr) bool {
