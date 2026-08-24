@@ -54,9 +54,9 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 			return nil, fmt.Errorf("xpg/shard/resolver: range %d: %w", index, err)
 		}
 
-		// This rejects empty, reversed, and NaN-bounded ranges.
-		valid := valueRange.Start < valueRange.End
-		if !valid {
+		// Using < intentionally rejects empty and reversed ranges as well as
+		// ranges with NaN boundaries for floating-point key types.
+		if !(valueRange.Start < valueRange.End) { //nolint:staticcheck // Negated comparison intentionally rejects NaN boundaries.
 			return nil, fmt.Errorf("xpg/shard/resolver: range %d must satisfy start < end", index)
 		}
 
@@ -79,16 +79,10 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 		}
 	}
 
-	// sourceIndex provides deterministic ordering for equal starts and keeps
-	// overlap errors tied to the caller's original slice.
-	slices.SortFunc(
+	slices.SortStableFunc(
 		entries,
 		func(left, right rangeEntry[K]) int {
-			if order := cmp.Compare(left.start, right.start); order != 0 {
-				return order
-			}
-
-			return cmp.Compare(left.sourceIndex, right.sourceIndex)
+			return cmp.Compare(left.start, right.start)
 		},
 	)
 
@@ -123,7 +117,7 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 // or execute a PostgreSQL query.
 func (resolver *RangeResolver[K]) Resolve(key K) (shard.Shard, error) {
 	if resolver == nil || len(resolver.ranges) == 0 {
-		return shard.Shard{}, shard.ErrNoShard
+		return shard.Shard{}, errors.New("xpg/shard/resolver: range resolver is not initialized")
 	}
 
 	// Non-overlap validation guarantees strictly increasing upper boundaries,

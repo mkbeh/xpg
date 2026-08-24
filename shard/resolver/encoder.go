@@ -8,9 +8,10 @@ import (
 
 // KeyEncoder converts a typed key into stable canonical bytes.
 //
-// Implementations used for persistent shard placement must remain
-// deterministic across processes and releases. Changing an encoder changes
-// hash placement and may require data migration.
+// Implementations used for persistent shard placement must remain deterministic
+// across processes and releases. Implementations shared by concurrent Resolve
+// calls must be concurrency-safe. Changing an encoder changes hash placement
+// and may require data migration.
 type KeyEncoder[K any] interface {
 	Encode(K) ([]byte, error)
 }

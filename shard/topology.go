@@ -36,23 +36,27 @@ func NewTopology(configs []Config) (*Topology, error) {
 		return nil, errors.New("xpg/shard: topology must contain at least one shard")
 	}
 
-	shards := make([]Shard, 0, len(configs))
+	shards := make([]Shard, len(configs))
 	indexByID := make(map[ID]int, len(configs))
 
 	for index, config := range configs {
-		resolved, err := newShard(config)
-		if err != nil {
-			return nil, fmt.Errorf("xpg/shard: shard %d: %w", index, err)
+		if config.Cluster == nil {
+			return nil, fmt.Errorf("xpg/shard: shard %d: cluster is nil", index)
 		}
 
-		id := resolved.ID()
+		id := config.Cluster.ID()
+		if id == "" {
+			return nil, fmt.Errorf("xpg/shard: shard %d: cluster ID must not be empty", index)
+		}
 
 		if _, exists := indexByID[id]; exists {
 			return nil, fmt.Errorf("xpg/shard: duplicate shard ID %q", id)
 		}
 
-		indexByID[id] = len(shards)
-		shards = append(shards, resolved)
+		shards[index] = Shard{
+			cluster: config.Cluster,
+		}
+		indexByID[id] = index
 	}
 
 	return &Topology{
@@ -87,10 +91,6 @@ func (t *Topology) Shards() []Shard {
 
 // Shard returns one shard by stable ID.
 func (t *Topology) Shard(id ID) (Shard, bool) {
-	return t.lookup(id)
-}
-
-func (t *Topology) lookup(id ID) (Shard, bool) {
 	if t == nil {
 		return Shard{}, false
 	}
@@ -111,22 +111,8 @@ func (t *Topology) Close() {
 	}
 
 	t.closeOnce.Do(func() {
-		for index := len(t.shards) - 1; index >= 0; index-- {
-			t.shards[index].cluster.Close()
+		for _, v := range slices.Backward(t.shards) {
+			v.cluster.Close()
 		}
 	})
-}
-
-func newShard(config Config) (Shard, error) {
-	if config.Cluster == nil {
-		return Shard{}, errors.New("cluster is nil")
-	}
-
-	if config.Cluster.ID() == "" {
-		return Shard{}, errors.New("cluster ID must not be empty")
-	}
-
-	return Shard{
-		cluster: config.Cluster,
-	}, nil
 }

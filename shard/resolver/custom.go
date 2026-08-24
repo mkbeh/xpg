@@ -8,8 +8,9 @@ import (
 
 // ResolveFunc maps an application key to a shard ID within topology.
 //
-// Implementations shared by concurrent callers must be deterministic and
-// concurrency-safe. They should not perform hidden I/O or modify topology.
+// Resolve functions should return shard.ErrNoShard when a key cannot be mapped
+// to a shard. Implementations shared by concurrent callers must be deterministic
+// and concurrency-safe. They should not perform hidden I/O or modify topology.
 type ResolveFunc[K any] func(key K, topology *shard.Topology) (shard.ID, error)
 
 // CustomResolver adapts ResolveFunc to shard.Resolver.
@@ -36,12 +37,8 @@ func NewCustom[K any](topology *shard.Topology, resolve ResolveFunc[K]) (*Custom
 
 // Resolve maps key to a shard and rejects IDs absent from the bound topology.
 func (resolver *CustomResolver[K]) Resolve(key K) (shard.Shard, error) {
-	if resolver == nil ||
-		resolver.topology == nil ||
-		resolver.resolve == nil {
-		return shard.Shard{}, errors.New(
-			"xpg/shard/resolver: custom resolver is not initialized",
-		)
+	if resolver == nil || resolver.topology == nil || resolver.resolve == nil {
+		return shard.Shard{}, errors.New("xpg/shard/resolver: custom resolver is not initialized")
 	}
 
 	id, err := resolver.resolve(key, resolver.topology)
@@ -51,9 +48,7 @@ func (resolver *CustomResolver[K]) Resolve(key K) (shard.Shard, error) {
 
 	resolved, ok := resolver.topology.Shard(id)
 	if !ok {
-		return shard.Shard{}, &shard.UnknownShardError{
-			ShardID: id,
-		}
+		return shard.Shard{}, &shard.UnknownShardError{ShardID: id}
 	}
 
 	return resolved, nil

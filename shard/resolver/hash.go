@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/mkbeh/xpg/shard"
 )
@@ -47,14 +46,8 @@ func NewHash[K any](
 		return nil, errors.New("xpg/shard/resolver: key encoder is nil")
 	}
 
-	trimmedNamespace := strings.TrimSpace(namespace)
-
-	if trimmedNamespace == "" {
-		return nil, errors.New("xpg/shard/resolver: hash namespace must not be blank")
-	}
-
-	if trimmedNamespace != namespace {
-		return nil, errors.New("xpg/shard/resolver: hash namespace must not contain surrounding whitespace")
+	if namespace == "" {
+		return nil, errors.New("xpg/shard/resolver: hash namespace must not be empty")
 	}
 
 	if len(namespace) > math.MaxUint32 {
@@ -71,23 +64,30 @@ func NewHash[K any](
 			return nil, errors.New("xpg/shard/resolver: shard ID is too large")
 		}
 
+		// Resolve reuses one score-input buffer for all candidates, sized for
+		// the largest shard ID in the topology.
 		maxIDLength = max(maxIDLength, len(id))
 	}
 
-	// Prefix is invariant for the lifetime of the resolver:
+	// Prefix is part of the persistent placement format:
 	//
 	// domain || namespace_length || namespace
-	prefix := make([]byte, len(rendezvousDomain)+rendezvousLengthSize+len(namespace))
+	//
+	// Changing this layout changes shard placement and requires data migration.
+	prefixSize := len(rendezvousDomain) + rendezvousLengthSize + len(namespace)
+	prefix := make([]byte, prefixSize)
 
-	offset := copy(prefix, rendezvousDomain)
+	lengthOffset := len(rendezvousDomain)
+	namespaceOffset := lengthOffset + rendezvousLengthSize
+
+	copy(prefix, rendezvousDomain)
 
 	binary.BigEndian.PutUint32(
-		prefix[offset:offset+rendezvousLengthSize],
+		prefix[lengthOffset:namespaceOffset],
 		uint32(len(namespace)),
 	)
-	offset += rendezvousLengthSize
 
-	copy(prefix[offset:], namespace)
+	copy(prefix[namespaceOffset:], namespace)
 
 	return &HashResolver[K]{
 		shards:      shards,
@@ -97,14 +97,8 @@ func NewHash[K any](
 	}, nil
 }
 
-// Resolve selects the shard with the lexicographically greatest SHA-256 score.
-//
-// Resolve performs only in-memory routing. It does not acquire a connection or
-// execute a PostgreSQL query.
 func (resolver *HashResolver[K]) Resolve(key K) (shard.Shard, error) {
-	if resolver == nil ||
-		len(resolver.shards) == 0 ||
-		resolver.encoder == nil {
+	if resolver == nil || len(resolver.shards) == 0 || resolver.encoder == nil {
 		return shard.Shard{}, errors.New("xpg/shard/resolver: hash resolver is not initialized")
 	}
 
@@ -117,13 +111,13 @@ func (resolver *HashResolver[K]) Resolve(key K) (shard.Shard, error) {
 		return shard.Shard{}, errors.New("xpg/shard/resolver: encoded key is too large")
 	}
 
-	// Build the candidate-independent prefix once. The shard ID suffix is
-	// overwritten for each candidate below.
 	keyLengthOffset := len(resolver.prefix)
 	keyOffset := keyLengthOffset + rendezvousLengthSize
 	idLengthOffset := keyOffset + len(encoded)
 	idOffset := idLengthOffset + rendezvousLengthSize
 
+	// The candidate-independent part is written once. Only the shard ID suffix
+	// is overwritten while evaluating rendezvous scores.
 	scoreInput := make([]byte, idOffset+resolver.maxIDLength)
 
 	copy(scoreInput, resolver.prefix)
@@ -154,14 +148,11 @@ func (resolver *HashResolver[K]) Resolve(key K) (shard.Shard, error) {
 		copy(scoreInput[idOffset:inputEnd], candidateID)
 
 		score := sha256.Sum256(scoreInput[:inputEnd])
-
 		comparison := bytes.Compare(score[:], best[:])
 
 		// Shard ID is the deterministic tie-breaker, so placement does not
 		// depend on topology registration order when scores are equal.
-		if !hasBest ||
-			comparison > 0 ||
-			comparison == 0 && candidateID < bestID {
+		if !hasBest || comparison > 0 || (comparison == 0 && candidateID < bestID) {
 			selected = candidate
 			best = score
 			bestID = candidateID

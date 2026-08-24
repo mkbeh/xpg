@@ -7,8 +7,8 @@
 // ranges; applications may also provide custom routing logic. Resolvers borrow
 // their topology and do not own its clusters.
 //
-// The package also provides shard grouping, colocation checks, bounded fan-out,
-// and connection-budget diagnostics.
+// The package also provides shard grouping, colocation checks, and bounded
+// fan-out.
 //
 // The package does not inspect SQL, hide shard keys in contexts, move data,
 // replicate reference tables, or provide distributed transactions.

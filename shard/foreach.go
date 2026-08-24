@@ -18,7 +18,7 @@ type ForEachShardResults []ForEachShardResult
 
 // Err returns all shard failures joined in registration order.
 func (results ForEachShardResults) Err() error {
-	errs := make([]error, 0, len(results))
+	var errs []error
 
 	for _, result := range results {
 		if result.Err == nil {
@@ -50,7 +50,7 @@ func (t *Topology) ForEachShard(
 	fn func(context.Context, Shard) error,
 ) (ForEachShardResults, error) {
 	if t == nil || len(t.shards) == 0 {
-		return nil, errors.New("xpg/shard: topology is nil or empty")
+		return nil, errors.New("xpg/shard: topology is nil")
 	}
 
 	if concurrency <= 0 {
@@ -62,7 +62,6 @@ func (t *Topology) ForEachShard(
 	}
 
 	results := make(ForEachShardResults, len(t.shards))
-
 	for index, shard := range t.shards {
 		results[index].ShardID = shard.ID()
 	}
@@ -71,10 +70,15 @@ func (t *Topology) ForEachShard(
 	jobs := make(chan int)
 
 	var workers sync.WaitGroup
+	workers.Add(workerCount)
 
 	for range workerCount {
-		workers.Go(func() {
+		go func() {
+			defer workers.Done()
+
 			for index := range jobs {
+				// An index may have been scheduled immediately before context
+				// cancellation. Skip callbacks that have not started yet.
 				if err := ctx.Err(); err != nil {
 					results[index].Err = err
 					continue
@@ -82,34 +86,28 @@ func (t *Topology) ForEachShard(
 
 				results[index].Err = fn(ctx, t.shards[index])
 			}
-		})
+		}()
 	}
 
 	nextIndex := 0
 
-schedule:
-	for nextIndex < len(t.shards) {
-		// Check cancellation before entering select so that a ready worker does
-		// not repeatedly win against an already canceled context.
-		if ctx.Err() != nil {
-			break
-		}
-
+	for nextIndex < len(t.shards) && ctx.Err() == nil {
+		// The explicit context check above prevents scheduling new work after
+		// cancellation has already been observed. The select still handles
+		// cancellation that happens while waiting for a worker.
 		select {
 		case jobs <- nextIndex:
 			nextIndex++
-
 		case <-ctx.Done():
-			break schedule
 		}
 	}
 
 	close(jobs)
 	workers.Wait()
 
+	// Workers own results for scheduled indexes [0, nextIndex). After all
+	// workers finish, remaining indexes can be marked canceled without races.
 	if err := ctx.Err(); err != nil {
-		// Every index before nextIndex was handed to exactly one worker.
-		// Everything from nextIndex onward was never scheduled.
 		for index := nextIndex; index < len(results); index++ {
 			results[index].Err = err
 		}

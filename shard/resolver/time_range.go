@@ -1,7 +1,6 @@
 package resolver
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"slices"
@@ -56,8 +55,8 @@ func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResol
 			return nil, fmt.Errorf("xpg/shard/resolver: time range %d: %w", index, err)
 		}
 
-		start := normalizeTime(valueRange.Start)
-		end := normalizeTime(valueRange.End)
+		start := timeToUTC(valueRange.Start)
+		end := timeToUTC(valueRange.End)
 
 		if !start.Before(end) {
 			return nil, fmt.Errorf("xpg/shard/resolver: time range %d must satisfy start < end", index)
@@ -82,16 +81,10 @@ func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResol
 		}
 	}
 
-	// sourceIndex keeps overlap diagnostics tied to the caller's original
-	// slice and provides deterministic ordering for equal starts.
-	slices.SortFunc(
+	slices.SortStableFunc(
 		entries,
 		func(left, right timeRangeEntry) int {
-			if order := left.start.Compare(right.start); order != 0 {
-				return order
-			}
-
-			return cmp.Compare(left.sourceIndex, right.sourceIndex)
+			return left.start.Compare(right.start)
 		},
 	)
 
@@ -124,10 +117,10 @@ func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResol
 // or execute a PostgreSQL query.
 func (resolver *TimeRangeResolver) Resolve(key time.Time) (shard.Shard, error) {
 	if resolver == nil || len(resolver.ranges) == 0 {
-		return shard.Shard{}, shard.ErrNoShard
+		return shard.Shard{}, errors.New("xpg/shard/resolver: time range resolver is not initialized")
 	}
 
-	key = normalizeTime(key)
+	key = timeToUTC(key)
 
 	// Non-overlap validation guarantees strictly increasing upper boundaries,
 	// making this search predicate monotonic.
@@ -153,6 +146,6 @@ func (resolver *TimeRangeResolver) Resolve(key time.Time) (shard.Shard, error) {
 	return entry.shard, nil
 }
 
-func normalizeTime(value time.Time) time.Time {
-	return value.UTC()
+func timeToUTC(t time.Time) time.Time {
+	return t.UTC()
 }

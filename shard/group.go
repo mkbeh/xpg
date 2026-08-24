@@ -24,18 +24,20 @@ func SameShard[K any](resolver Resolver[K], keys ...K) (Shard, error) {
 	expectedID := expected.ID()
 
 	for index := 1; index < len(keys); index++ {
-		actual, resolveErr := resolver.Resolve(keys[index])
-		if resolveErr != nil {
-			return Shard{}, fmt.Errorf("xpg/shard: resolve key %d: %w", index, resolveErr)
+		actual, err := resolver.Resolve(keys[index])
+		if err != nil {
+			return Shard{}, fmt.Errorf("xpg/shard: resolve key %d: %w", index, err)
 		}
 
 		actualID := actual.ID()
-		if actualID != expectedID {
-			return Shard{}, &MismatchError{
-				Expected: expectedID,
-				Actual:   actualID,
-				Index:    index,
-			}
+		if actualID == expectedID {
+			continue
+		}
+
+		return Shard{}, &MismatchError{
+			Expected: expectedID,
+			Actual:   actualID,
+			Index:    index,
 		}
 	}
 
@@ -72,12 +74,9 @@ func GroupByShard[K any](resolver Resolver[K], keys []K) ([]Group[K], error) {
 			groupIndex = len(groups)
 			indexByID[id] = groupIndex
 
-			groups = append(
-				groups,
-				Group[K]{
-					Shard: resolved,
-				},
-			)
+			groups = append(groups, Group[K]{
+				Shard: resolved,
+			})
 		}
 
 		groups[groupIndex].Keys = append(groups[groupIndex].Keys, key)
