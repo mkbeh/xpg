@@ -7,6 +7,10 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/multitracer"
+	"github.com/jackc/pgx/v5/tracelog"
 )
 
 // Option configures a Pool.
@@ -26,9 +30,10 @@ type settings struct {
 	name    string
 	labels  map[string]string
 	metrics Metrics
+	tracers []pgx.QueryTracer
 }
 
-func (s settings) poolName(host string, port uint16, database string) string {
+func (s *settings) poolName(host string, port uint16, database string) string {
 	if s.name != "" {
 		return s.name
 	}
@@ -42,6 +47,14 @@ func (s settings) poolName(host string, port uint16, database string) string {
 	}
 
 	return address + "/" + database
+}
+
+func (s *settings) buildTracer() pgx.QueryTracer {
+	if len(s.tracers) == 0 {
+		return nil
+	}
+
+	return multitracer.New(s.tracers...)
 }
 
 func defaultSettings() *settings {
@@ -129,6 +142,54 @@ func WithMetrics(metrics Metrics) Option {
 		}
 
 		settings.metrics = metrics
+
+		return nil
+	})
+}
+
+// WithLogger attaches a pgx-compatible logger to the pool.
+//
+// Logging is implemented through pgx tracelog and participates in the same
+// tracing pipeline as custom tracers. If other tracers are configured, xpg
+// combines them automatically with pgx multitracer. pgx tracelog may include
+// SQL text and query arguments in log records; applications are responsible for
+// choosing an appropriate level and handling sensitive values.
+func WithLogger(logger tracelog.Logger, level tracelog.LogLevel) Option {
+	return optionFunc(func(settings *settings) error {
+		if logger == nil {
+			return errors.New("pool logger is nil")
+		}
+
+		settings.tracers = append(settings.tracers, &tracelog.TraceLog{
+			Logger:   logger,
+			LogLevel: level,
+		})
+
+		return nil
+	})
+}
+
+// WithTracer attaches a pgx query tracer to the pool.
+//
+// The option may be specified multiple times. Tracers are invoked in the order
+// they are configured, after any tracer already present in
+// config.ConnConfig.Tracer. When more than one tracer is present, xpg combines
+// them with pgx multitracer. Additional pgx tracing capabilities implemented by
+// a tracer, such as batch, copy, prepare, connect, acquire, and release tracing,
+// are preserved by multitracer.
+func WithTracer(tracer pgx.QueryTracer) Option {
+	return WithTracers(tracer)
+}
+
+func WithTracers(tracers ...pgx.QueryTracer) Option {
+	return optionFunc(func(settings *settings) error {
+		for _, tracer := range tracers {
+			if tracer == nil {
+				return errors.New("pool tracer is nil")
+			}
+		}
+
+		settings.tracers = append(settings.tracers, tracers...)
 
 		return nil
 	})

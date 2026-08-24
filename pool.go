@@ -54,6 +54,10 @@ func New(ctx context.Context, config *pgxpool.Config, options ...Option) (*Pool,
 	poolConfig := config.Copy()
 	connConfig := poolConfig.ConnConfig
 
+	if tracer := settings.buildTracer(); tracer != nil {
+		connConfig.Tracer = tracer
+	}
+
 	pgxPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("xpg: create pool: %w", err)

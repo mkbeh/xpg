@@ -2,14 +2,14 @@
 
 This directory contains runnable examples demonstrating the main features and usage patterns of `xpg`.
 
-| Example                        | Demonstrates                                                                              |
-|:-------------------------------|:------------------------------------------------------------------------------------------|
-| [`basic`](basic)               | Pool lifecycle and common query methods                                                   |
-| [`transactions`](transactions) | Committing an outer transaction after an optional operation is rolled back to a savepoint |
-| [`advisory`](advisory)         | Coordinating concurrent transactions with PostgreSQL advisory locks                       |
-| [`otel`](otel)                 | Exporting pool metrics through OpenTelemetry and Prometheus                               |
-| [`cluster`](cluster)           | Routing reads and transactions across primary and replica pools                           |
-| [`sharding`](shard)            | Typed routing across immutable standalone and cluster shard targets                       |
+| Example                          | Demonstrates                                                                              |
+|:---------------------------------|:------------------------------------------------------------------------------------------|
+| [`basic`](basic)                 | Pool lifecycle and common query methods                                                   |
+| [`transactions`](transactions)   | Committing an outer transaction after an optional operation is rolled back to a savepoint |
+| [`advisory`](advisory)           | Coordinating concurrent transactions with PostgreSQL advisory locks                       |
+| [`observability`](observability) | Logging with `slog`, OpenTelemetry tracing, and Prometheus pool metrics                   |
+| [`cluster`](cluster)             | Routing reads and transactions across primary and replica pools                           |
+| [`sharding`](shard)              | Typed routing across immutable standalone and cluster shard targets                       |
 
 ## Running the examples
 

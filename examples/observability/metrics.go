@@ -7,11 +7,9 @@ import (
 
 	promclient "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.opentelemetry.io/otel"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 type metricsRuntime struct {
@@ -19,7 +17,7 @@ type metricsRuntime struct {
 	meterProvider *sdkmetric.MeterProvider
 }
 
-func newMetricsRuntime(ctx context.Context) (*metricsRuntime, error) {
+func newMetricsRuntime(res *resource.Resource) (*metricsRuntime, error) {
 	registry := promclient.NewRegistry()
 
 	exporter, err := otelprom.New(
@@ -30,27 +28,10 @@ func newMetricsRuntime(ctx context.Context) (*metricsRuntime, error) {
 		return nil, fmt.Errorf("create Prometheus exporter: %w", err)
 	}
 
-	res, err := resource.New(
-		ctx,
-		resource.WithFromEnv(),
-		resource.WithTelemetrySDK(),
-		resource.WithAttributes(
-			semconv.ServiceName(
-				"xpg-observability-example",
-			),
-			semconv.ServiceVersion("dev"),
-		),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create OpenTelemetry resource: %w", err)
-	}
-
 	meterProvider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(exporter),
 	)
-
-	otel.SetMeterProvider(meterProvider)
 
 	return &metricsRuntime{
 		handler: promhttp.HandlerFor(
@@ -63,6 +44,10 @@ func newMetricsRuntime(ctx context.Context) (*metricsRuntime, error) {
 
 func (m *metricsRuntime) Handler() http.Handler {
 	return m.handler
+}
+
+func (m *metricsRuntime) MeterProvider() *sdkmetric.MeterProvider {
+	return m.meterProvider
 }
 
 func (m *metricsRuntime) Shutdown(ctx context.Context) error {

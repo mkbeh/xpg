@@ -4,16 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/tracelog"
 	"github.com/mkbeh/xpg"
 	"github.com/mkbeh/xpg/extra/otelxpg"
+	"github.com/mkbeh/xpg/extra/slogxpg"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -22,16 +27,35 @@ const (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	logger := slog.New(
+		slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}),
+	)
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
 	defer stop()
 
-	if err := run(ctx); err != nil {
-		log.Fatal(err)
+	if err := run(ctx, logger); err != nil {
+		logger.Error(
+			"observability example failed",
+			slog.Any("error", err),
+		)
+		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context) (runErr error) {
-	metrics, err := newMetricsRuntime(ctx)
+func run(ctx context.Context, logger *slog.Logger) (runErr error) {
+	res, err := newOTelResource(ctx)
+	if err != nil {
+		return err
+	}
+
+	metrics, err := newMetricsRuntime(res)
 	if err != nil {
 		return fmt.Errorf("initialize metrics: %w", err)
 	}
@@ -45,6 +69,20 @@ func run(ctx context.Context) (runErr error) {
 		)
 	}()
 
+	tracing, err := newTracingRuntime(res)
+	if err != nil {
+		return fmt.Errorf("initialize tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		runErr = errors.Join(
+			runErr,
+			tracing.Shutdown(shutdownCtx),
+		)
+	}()
+
 	config, err := pgxpool.ParseConfig(databaseURL())
 	if err != nil {
 		return fmt.Errorf("parse PostgreSQL config: %w", err)
@@ -53,13 +91,30 @@ func run(ctx context.Context) (runErr error) {
 	// A small pool makes contention visible when POST /load runs.
 	config.MaxConns = 2
 
+	pgxLogger := logger.With(slog.String("component", "pgx"))
+
 	pool, err := xpg.New(
 		ctx,
 		config,
-		xpg.WithName("otel-example"),
+		xpg.WithName("observability-example"),
 		xpg.WithLabel("xpg.pool.role", "primary"),
+		xpg.WithLogger(
+			slogxpg.New(pgxLogger),
+			tracelog.LogLevelInfo,
+		),
+		xpg.WithTracer(
+			otelpgx.NewTracer(
+				otelpgx.WithTracerProvider(
+					tracing.TracerProvider(),
+				),
+			),
+		),
 		xpg.WithMetrics(
-			otelxpg.NewMetrics(),
+			otelxpg.NewMetrics(
+				otelxpg.WithMeterProvider(
+					metrics.MeterProvider(),
+				),
+			),
 		),
 	)
 	if err != nil {
@@ -72,9 +127,8 @@ func run(ctx context.Context) (runErr error) {
 	}
 
 	mux := http.NewServeMux()
-
 	mux.Handle("GET /metrics", metrics.Handler())
-	mux.HandleFunc("POST /load", loadHandler(pool))
+	mux.HandleFunc("POST /load", loadHandler(pool, tracing.Tracer()))
 
 	server := &http.Server{
 		Addr:              httpAddress(),
@@ -82,7 +136,10 @@ func run(ctx context.Context) (runErr error) {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("OpenTelemetry example listening on http://%s", server.Addr)
+	logger.Info(
+		"observability example listening",
+		slog.String("address", "http://"+server.Addr),
+	)
 
 	if err := serveHTTP(ctx, server); err != nil {
 		return fmt.Errorf("serve HTTP: %w", err)
@@ -105,7 +162,6 @@ func serveHTTP(ctx context.Context, server *http.Server) error {
 		}
 
 		return err
-
 	case <-ctx.Done():
 	}
 
@@ -123,11 +179,17 @@ func serveHTTP(ctx context.Context, server *http.Server) error {
 	return nil
 }
 
-func loadHandler(pool *xpg.Pool) http.HandlerFunc {
+func loadHandler(pool *xpg.Pool, tracer trace.Tracer) http.HandlerFunc {
 	return func(w http.ResponseWriter, request *http.Request) {
+		ctx, span := tracer.Start(request.Context(), "run-load")
+		defer span.End()
+
 		startedAt := time.Now()
 
-		if err := runWorkload(request.Context(), pool); err != nil {
+		if err := runWorkload(ctx, pool); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "workload failed")
+
 			http.Error(
 				w,
 				fmt.Sprintf("run workload: %v", err),
@@ -137,11 +199,7 @@ func loadHandler(pool *xpg.Pool) http.HandlerFunc {
 			return
 		}
 
-		_, _ = fmt.Fprintf(
-			w,
-			"workload completed in %s\n",
-			time.Since(startedAt),
-		)
+		_, _ = fmt.Fprintf(w, "workload completed in %s\n", time.Since(startedAt))
 	}
 }
 
@@ -154,7 +212,11 @@ func runWorkload(ctx context.Context, pool *xpg.Pool) error {
 	for range workerCount {
 		go func() {
 			<-start
-			_, err := pool.Exec(ctx, "SELECT pg_sleep(1)")
+
+			_, err := pool.Exec(
+				ctx,
+				"SELECT pg_sleep(1)",
+			)
 			results <- err
 		}()
 	}
