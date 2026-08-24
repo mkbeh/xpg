@@ -40,10 +40,7 @@ func ParsePolicy(value string) (ReadPolicy, error) {
 	case readPolicyReplicaRequired:
 		return ReadReplicaRequired, nil
 	default:
-		return 0, fmt.Errorf(
-			"xpg/cluster: unknown read policy %q",
-			value,
-		)
+		return 0, fmt.Errorf("xpg/cluster: unknown read policy %q", value)
 	}
 }
 
@@ -73,14 +70,10 @@ func (c *Cluster) ReadPool(ctx context.Context, policy ReadPolicy) (*xpg.Pool, e
 
 	switch policy {
 	case ReadPrimary:
-		if c.primary == nil {
-			return nil, ErrNoPrimary
-		}
-
-		return c.primary, nil
+		return c.resolvePrimary()
 
 	case ReadReplicaPreferred:
-		replica, err := c.selectReplica(ctx)
+		replica, err := c.resolveReplica(ctx)
 		if err == nil {
 			return replica, nil
 		}
@@ -89,24 +82,25 @@ func (c *Cluster) ReadPool(ctx context.Context, policy ReadPolicy) (*xpg.Pool, e
 			return nil, err
 		}
 
-		if c.primary == nil {
-			return nil, ErrNoPrimary
-		}
-
-		return c.primary, nil
+		return c.resolvePrimary()
 
 	case ReadReplicaRequired:
-		return c.selectReplica(ctx)
+		return c.resolveReplica(ctx)
 
 	default:
-		return nil, fmt.Errorf(
-			"xpg/cluster: unsupported read policy %d",
-			policy,
-		)
+		return nil, fmt.Errorf("xpg/cluster: unsupported read policy %d", policy)
 	}
 }
 
-func (c *Cluster) selectReplica(ctx context.Context) (*xpg.Pool, error) {
+func (c *Cluster) resolvePrimary() (*xpg.Pool, error) {
+	if c.primary == nil {
+		return nil, ErrNoPrimary
+	}
+
+	return c.primary, nil
+}
+
+func (c *Cluster) resolveReplica(ctx context.Context) (*xpg.Pool, error) {
 	if len(c.replicas) == 0 {
 		return nil, ErrNoReplica
 	}
@@ -118,7 +112,7 @@ func (c *Cluster) selectReplica(ctx context.Context) (*xpg.Pool, error) {
 
 	if index < 0 || index >= len(c.replicas) {
 		return nil, fmt.Errorf(
-			"xpg/cluster: replica selector returned index %d for %d replicas",
+			"xpg/cluster: replica selector returned invalid index %d for %d replicas",
 			index,
 			len(c.replicas),
 		)

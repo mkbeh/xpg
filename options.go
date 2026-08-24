@@ -104,9 +104,8 @@ func WithLabels(labels map[string]string) Option {
 
 	return optionFunc(func(settings *settings) error {
 		for key, value := range labels {
-			key = strings.TrimSpace(key)
 			if key == "" {
-				return errors.New("label key must not be blank")
+				return errors.New("label key must not be empty")
 			}
 
 			settings.labels[key] = value
@@ -118,11 +117,9 @@ func WithLabels(labels map[string]string) Option {
 
 // WithLabel adds or replaces one pool label.
 func WithLabel(key, value string) Option {
-	key = strings.TrimSpace(key)
-
 	return optionFunc(func(settings *settings) error {
 		if key == "" {
-			return errors.New("label key must not be blank")
+			return errors.New("label key must not be empty")
 		}
 
 		settings.labels[key] = value
@@ -200,8 +197,5 @@ func cloneLabels(labels map[string]string) map[string]string {
 		return nil
 	}
 
-	cloned := make(map[string]string, len(labels))
-	maps.Copy(cloned, labels)
-
-	return cloned
+	return maps.Clone(labels)
 }

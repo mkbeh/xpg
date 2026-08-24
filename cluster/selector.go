@@ -77,11 +77,10 @@ func RoundRobinSelector() ReplicaSelector {
 func (selector *roundRobinSelector) Select(_ context.Context, replicas ReplicaSet) (int, error) {
 	length := replicas.Len()
 
-	if length == 0 {
+	switch length {
+	case 0:
 		return -1, ErrNoReplica
-	}
-
-	if length == 1 {
+	case 1:
 		return 0, nil
 	}
 
@@ -95,8 +94,5 @@ func cloneLabels(labels map[string]string) map[string]string {
 		return nil
 	}
 
-	cloned := make(map[string]string, len(labels))
-	maps.Copy(cloned, labels)
-
-	return cloned
+	return maps.Clone(labels)
 }

@@ -54,7 +54,7 @@ type Cluster struct {
 // At least one pool is required. When Selector is nil, replicas are selected
 // using round-robin.
 func New(config Config) (*Cluster, error) {
-	if config.Primary != nil && invalidPool(config.Primary) {
+	if config.Primary != nil && config.Primary.Raw() == nil {
 		return nil, errors.New("xpg/cluster: primary pool is invalid")
 	}
 
@@ -70,13 +70,13 @@ func New(config Config) (*Cluster, error) {
 	metadata := make(replicaMetadata, len(replicas))
 
 	for index, replica := range replicas {
-		if invalidPool(replica) {
-			return nil, fmt.Errorf("xpg/cluster: replica %d is nil", index)
+		if replica == nil || replica.Raw() == nil {
+			return nil, fmt.Errorf("pg/cluster: replica %d is invalid", index)
 		}
 
 		metadata[index] = ReplicaInfo{
 			name:   replica.Name(),
-			labels: cloneLabels(replica.Labels()),
+			labels: replica.Labels(),
 		}
 	}
 
@@ -93,24 +93,6 @@ func New(config Config) (*Cluster, error) {
 		metadata: metadata,
 		selector: selector,
 	}, nil
-}
-
-func invalidPool(pool *xpg.Pool) bool {
-	return pool == nil || pool.Raw() == nil
-}
-
-func validateLabels(labels map[string]string) error {
-	for key, value := range labels {
-		if key == "" {
-			return errors.New("label key must not be empty")
-		}
-
-		if value == "" {
-			return fmt.Errorf("label %q value must not be empty", key)
-		}
-	}
-
-	return nil
 }
 
 // ID returns the stable logical cluster ID.
@@ -182,12 +164,22 @@ func (c *Cluster) Close() {
 	}
 
 	c.closeOnce.Do(func() {
-		for index := len(c.replicas) - 1; index >= 0; index-- {
-			c.replicas[index].Close()
+		for _, v := range slices.Backward(c.replicas) {
+			v.Close()
 		}
 
 		if c.primary != nil {
 			c.primary.Close()
 		}
 	})
+}
+
+func validateLabels(labels map[string]string) error {
+	for key := range labels {
+		if key == "" {
+			return errors.New("label key must not be empty")
+		}
+	}
+
+	return nil
 }
