@@ -71,7 +71,7 @@ func New(config Config) (*Cluster, error) {
 
 	for index, replica := range replicas {
 		if replica == nil || replica.Raw() == nil {
-			return nil, fmt.Errorf("pg/cluster: replica %d is invalid", index)
+			return nil, fmt.Errorf("xpg/cluster: replica %d is invalid", index)
 		}
 
 		metadata[index] = ReplicaInfo{
