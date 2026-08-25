@@ -1,82 +1,121 @@
-package postgres
+package xpg
 
 import (
-	"context"
 	"errors"
+	"io"
 	"net"
 
-	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-type PgErrorCode int
-
 const (
-	ErrContextDeadline PgErrorCode = iota
-	ErrNoRows
-	ErrUniqViolation
-	ErrForeignKeyViolation
-	ErrSerializable
-	ErrOther
-	ErrBeginTransaction
-	ErrCommitTransaction
-	ErrNoConnection
+	sqlStateUniqueViolation          = "23505"
+	sqlStateForeignKeyViolation      = "23503"
+	sqlStateNotNullViolation         = "23502"
+	sqlStateCheckViolation           = "23514"
+	sqlStateSerializationFailure     = "40001"
+	sqlStateDeadlockDetected         = "40P01"
+	sqlStateLockNotAvailable         = "55P03"
+	sqlStateQueryCanceled            = "57014"
+	sqlStateConnectionExceptionClass = "08"
 )
 
-type PgError struct {
-	code PgErrorCode
-	msg  string
+// SQLState returns the PostgreSQL SQLSTATE code carried by err.
+// It returns an empty string when the error tree does not contain a
+// pgconn.PgError.
+func SQLState(err error) string {
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok || pgErr == nil {
+		return ""
+	}
+
+	return pgErr.SQLState()
 }
 
-func (e PgError) Error() string {
-	return e.msg
+// IsNoRows reports whether err indicates that a query returned no rows.
+func IsNoRows(err error) bool {
+	return errors.Is(err, pgx.ErrNoRows)
 }
 
-func (e PgError) Code() PgErrorCode {
-	return e.code
+// IsUniqueViolation reports whether err is a PostgreSQL unique_violation.
+func IsUniqueViolation(err error) bool {
+	return SQLState(err) == sqlStateUniqueViolation
 }
 
-func NewPgError(code PgErrorCode, err error) *PgError {
-	return &PgError{code, err.Error()}
+// IsForeignKeyViolation reports whether err is a PostgreSQL
+// foreign_key_violation.
+func IsForeignKeyViolation(err error) bool {
+	return SQLState(err) == sqlStateForeignKeyViolation
 }
 
-func ConvertError(err error) *PgError {
+// IsNotNullViolation reports whether err is a PostgreSQL not_null_violation.
+func IsNotNullViolation(err error) bool {
+	return SQLState(err) == sqlStateNotNullViolation
+}
+
+// IsCheckViolation reports whether err is a PostgreSQL check_violation.
+func IsCheckViolation(err error) bool {
+	return SQLState(err) == sqlStateCheckViolation
+}
+
+// IsSerializationFailure reports whether err is a PostgreSQL
+// serialization_failure.
+func IsSerializationFailure(err error) bool {
+	return SQLState(err) == sqlStateSerializationFailure
+}
+
+// IsDeadlock reports whether err is a PostgreSQL deadlock_detected error.
+func IsDeadlock(err error) bool {
+	return SQLState(err) == sqlStateDeadlockDetected
+}
+
+// IsLockNotAvailable reports whether err is a PostgreSQL lock_not_available
+// error.
+func IsLockNotAvailable(err error) bool {
+	return SQLState(err) == sqlStateLockNotAvailable
+}
+
+// IsQueryCanceled reports whether PostgreSQL canceled the query.
+//
+// Client-side context cancellation remains available through errors.Is with
+// context.Canceled or context.DeadlineExceeded.
+func IsQueryCanceled(err error) bool {
+	return SQLState(err) == sqlStateQueryCanceled
+}
+
+// IsConnectionError reports whether err represents a PostgreSQL connection
+// failure known to pgx or the Go networking stack.
+func IsConnectionError(err error) bool {
 	if err == nil {
-		return nil
+		return false
 	}
 
-	if pgErr, ok := err.(*PgError); ok {
-		return pgErr
+	if errors.Is(err, pgconn.ErrConnClosed) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
 	}
 
-	if ne, ok := err.(net.Error); ok {
-		return NewPgError(ErrNoConnection, ne)
+	if _, ok := errors.AsType[*pgconn.ConnectError](err); ok {
+		return true
 	}
 
-	switch {
-	case errors.Is(err, context.Canceled), pgconn.Timeout(err):
-		return NewPgError(ErrContextDeadline, err)
-	case errors.Is(err, pgx.ErrNoRows):
-		return NewPgError(ErrNoRows, err)
-	default:
-		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) {
-			return NewPgError(ErrOther, err)
-		}
-		return NewPgError(pgCodeToError(pgErr.Code), err)
+	if _, ok := errors.AsType[*net.OpError](err); ok {
+		return true
 	}
+
+	state := SQLState(err)
+
+	return len(state) >= 2 &&
+		state[:2] == sqlStateConnectionExceptionClass
 }
 
-var pgCodeMap = map[string]PgErrorCode{
-	pgerrcode.UniqueViolation:      ErrUniqViolation,
-	pgerrcode.ForeignKeyViolation:  ErrForeignKeyViolation,
-	pgerrcode.SerializationFailure: ErrSerializable,
-}
-
-func pgCodeToError(code string) PgErrorCode {
-	if c, ok := pgCodeMap[code]; ok {
-		return c
-	}
-	return ErrOther
+// IsRetryableTransaction reports whether PostgreSQL aborted the transaction
+// because of a serialization failure or a deadlock.
+//
+// The entire transaction callback must still be safe to replay. Connection
+// failures are deliberately not classified as transaction-retryable.
+func IsRetryableTransaction(err error) bool {
+	return IsSerializationFailure(err) || IsDeadlock(err)
 }

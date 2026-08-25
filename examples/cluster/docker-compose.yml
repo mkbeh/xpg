@@ -1,0 +1,70 @@
+services:
+  postgres-primary:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55432:5432"
+    volumes:
+      - primary-data:/var/lib/postgresql
+    healthcheck:
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres-replica-one:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55433:5432"
+    volumes:
+      - replica-one-data:/var/lib/postgresql
+    healthcheck:
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres-replica-two:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55434:5432"
+    volumes:
+      - replica-two-data:/var/lib/postgresql
+    healthcheck:
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  adminer:
+    image: adminer:standalone
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-primary
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+      postgres-replica-one:
+        condition: service_healthy
+      postgres-replica-two:
+        condition: service_healthy
+
+volumes:
+  primary-data:
+  replica-one-data:
+  replica-two-data:

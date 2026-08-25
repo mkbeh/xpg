@@ -1,332 +1,237 @@
 <div align="center">
 
-# xpg
+# Postgres toolkit for Go
 
 **Lightweight PostgreSQL wrapper for Go, built on top of [pgx](https://github.com/jackc/pgx).**
 
-![Go Version](https://img.shields.io/badge/go-1.26%2B-blue)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mkbeh/xpg.svg)](https://pkg.go.dev/github.com/mkbeh/xpg)
+[![Test](https://github.com/mkbeh/xpg/actions/workflows/test.yml/badge.svg)](https://github.com/mkbeh/xpg/actions/workflows/test.yml)
+[![Coverage](https://codecov.io/gh/mkbeh/xpg/graph/badge.svg)](https://codecov.io/gh/mkbeh/xpg)
 
 </div>
 
-`xpg` wraps the excellent [`pgx`](https://github.com/jackc/pgx) PostgreSQL driver with a compact API for common
-PostgreSQL workflows: read/write connection pool splitting, transaction helpers, embedded SQL migrations, query
-building, normalized errors, and exposing PostgreSQL observability with OpenTelemetry and Prometheus.
+`xpg` builds on the `pgx` client with a compact API for common PostgreSQL infrastructure patterns. It adds support for
+pool lifecycle, transactions and savepoints, PostgreSQL error classification, advisory locks, primary/replica routing,
+application-level sharding, and observability.
+
+The library uses `pgx` types and query model directly while keeping its core behavior and reducing boilerplate around
+connection management, routing, and common production workflows.
 
 ## Features
 
-* **Pools**: Separate writer and reader connection pools.
-* **Queries**: PostgreSQL-friendly query builder support.
-* **Transactions**: Transaction helpers with automatic rollback and panic recovery.
-* **Migrations**: Embedded SQL migrations via [golang-migrate](https://github.com/golang-migrate/migrate).
-* **Errors**: Normalized PostgreSQL error codes for common failure cases.
-* **Observability**: OpenTelemetry tracing and Prometheus metrics out of the box.
-* **Configuration**: Configure via Go structs or environment variables.
+* **Pool Lifecycle Management:** Thin pool management on top of `pgx` with direct access to the underlying PostgreSQL
+  client.
+* **Transactions and Savepoints:** Managed transactions, savepoints, and helpers for common multi-step transactional
+  workflows.
+* **Error Classification:** Classification of PostgreSQL constraint, transaction, cancellation, connection, and other
+  common database errors.
+* **Advisory Locking:** Transaction-level advisory locks for coordinating concurrent database operations.
+* **Primary/Replica Routing:** Explicit read policies, replica selection, primary fallback, and read-only transactions
+  across PostgreSQL nodes.
+* **Application-Level Sharding:** Hash, range, time-based, and custom routing with colocation checks, key grouping, and
+  bounded parallel operations across shards.
+* **Observability:** Structured logging, tracing, pool statistics, and optional OpenTelemetry metrics.
 
 ## Installation
+
+This repository contains the core `xpg` module. The core module is released from the repository root:
 
 ```bash
 go get github.com/mkbeh/xpg
 ```
 
-## Quick start
+Optional integrations are released independently under `extra`:
 
-The example below creates separate writer and reader pools and runs a simple query.
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-
-	postgres "github.com/mkbeh/xpg"
-)
-
-func main() {
-	ctx := context.Background()
-
-	cfg := &postgres.Config{
-		ClusterHost:        "127.0.0.1",
-		ClusterPort:        "5432", // writer/master port
-		ClusterReplicaPort: "5432", // reader/replica port; can be different in production
-		User:               "user",
-		Password:           "pass",
-		DB:                 "postgres",
-	}
-
-	writer, err := postgres.NewWriter(
-		postgres.WithConfig(cfg),
-		postgres.WithClientID("my-service"), // appended to application_name and metrics labels
-	)
-	if err != nil {
-		log.Fatal("failed to init writer pool:", err)
-	}
-	defer writer.Close()
-
-	reader, err := postgres.NewReader(
-		postgres.WithConfig(cfg),
-		postgres.WithClientID("my-service"),
-	)
-	if err != nil {
-		log.Fatal("failed to init reader pool:", err)
-	}
-	defer reader.Close()
-
-	// Use the writer pool for write-side operations.
-	if _, err := writer.Exec(ctx, "select 1"); err != nil {
-		log.Fatal("writer query failed:", err)
-	}
-
-	var greeting string
-
-	// Use the reader pool for read-only queries.
-	if err := reader.QueryRow(ctx, "select 'Hello, world!'").Scan(&greeting); err != nil {
-		log.Fatal("query failed:", err)
-	}
-
-	fmt.Println(greeting)
-}
+```bash
+go get github.com/mkbeh/xpg/extra/otelxpg
 ```
 
-More examples: [examples/](https://github.com/mkbeh/xpg/tree/main/examples)
+## Usage
 
-## Query Builder
-
-Each pool includes a preconfigured [squirrel](https://github.com/Masterminds/squirrel) statement builder with PostgreSQL
-dollar placeholders out of the box.
+Open an `xpg` pool and execute a PostgreSQL query:
 
 <!-- @formatter:off -->
 ```go
-sql, args, err := writer.QueryBuilder().
-	Insert("orders").
-	Columns("id", "status").
-	Values(orderID, "created").
-	ToSql()
+// urlExample := "postgres://username:password@localhost:5432/database_name"
+pool, err := xpg.Open(
+	context.Background(),
+	os.Getenv("DATABASE_URL"),
+	xpg.WithName("example-pool"),
+)
 if err != nil {
-	log.Fatalf("failed to build query: %v", err)
+	log.Fatalf("failed to open pool: %v", err)
+}
+defer pool.Close()
+
+var message string
+err = pool.QueryRow(context.Background(), "SELECT 'hello from xpg'").Scan(&message)
+if err != nil {
+	log.Fatalf("query failed: %v", err)
 }
 
-if _, err := writer.Exec(ctx, sql, args...); err != nil {
-	log.Fatalf("failed to execute insert: %v", err)
-}
+fmt.Println(message) // Outputs: hello from xpg
 ```
 <!-- @formatter:on -->
 
-## Transactions
+### Transactions
 
-Use `RunInTxx` for transactions with default options. It acts as an alias for `RunInTx` using default `pgx.TxOptions`.
+`xpg` provides managed transactions using the native `pgx` transaction API. Returning `nil` commits the transaction;
+returning an error rolls it back.
 
 <!-- @formatter:off -->
 ```go
-err := writer.RunInTxx(ctx, func(ctx context.Context) error {
-	_, err := writer.Exec(ctx, "INSERT INTO orders (id) VALUES (\$1)", orderID)
+err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
 	return err
 })
-if err != nil {
-	log.Fatalf("transaction failed: %v", err)
+```
+<!-- @formatter:on -->
+
+Savepoints can isolate optional work without aborting the outer transaction.
+
+### Advisory Locks
+
+`xpg` provides transaction-level PostgreSQL advisory locks for coordinating concurrent work.
+
+<!-- @formatter:off -->
+```go
+err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
+	if err := xpg.AdvisoryXactLock(ctx, tx, lockID); err != nil {
+		return err
+	}
+
+	_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'running' WHERE id = $1", jobID)
+	return err
+})
+```
+<!-- @formatter:on -->
+
+The lock is held for the duration of the transaction and released automatically on commit or rollback.
+
+### Error Handling
+
+`xpg` provides helpers for classifying PostgreSQL errors and inspecting SQLSTATE codes.
+
+<!-- @formatter:off -->
+```go
+_, err := pool.Exec(ctx, "INSERT INTO users (id, email) VALUES ($1, $2)", userID, email)
+
+switch {
+case xpg.IsUniqueViolation(err):
+    // Handle duplicate data.
+case xpg.IsRetryableTransaction(err):
+    // Retry the transaction when the operation is safe to replay.
+case err != nil:
+    return err
 }
 ```
 <!-- @formatter:on -->
 
-For a custom isolation level or access mode, use `RunInTx`:
+The underlying SQLSTATE code is also available through `xpg.SQLState`. Helpers cover constraint violations,
+serialization failures, deadlocks, lock errors, query cancellation, and connection failures.
+
+## Clustering
+
+`xpg` groups primary and replica pools into a logical cluster with explicit read routing.
 
 <!-- @formatter:off -->
 ```go
-err := writer.RunInTx(ctx, func(ctx context.Context) error {
-	_, err := writer.Exec(ctx, "INSERT INTO orders (id) VALUES (\$1)", orderID)
-	return err
-}, pgx.TxOptions{
-	IsoLevel: pgx.Serializable,
+orders, err := cluster.New(cluster.Config{
+	ID:       "orders",
+	Primary:  primary,
+	Replicas: []*xpg.Pool{replicaA, replicaB},
 })
 if err != nil {
-	log.Fatalf("serializable transaction failed: %v", err)
+	panic(err)
+}
+defer orders.Close()
+
+// Route writes explicitly to the primary.
+primaryPool := orders.Primary()
+
+_, err = primaryPool.Exec(ctx, "UPDATE orders SET status = 'processed' WHERE id = $1", orderID)
+if err != nil {
+	panic(err)
+}
+
+// Route reads according to the selected policy.
+readPool, err := orders.ReadPool(ctx, cluster.ReadReplicaPreferred)
+if err != nil {
+	panic(err)
+}
+
+var status string
+err = readPool.QueryRow(ctx, "SELECT status FROM orders WHERE id = $1", orderID).Scan(&status)
+if err != nil {
+	panic(err)
 }
 ```
 <!-- @formatter:on -->
 
-Rollback is handled automatically if an error occurs. The transaction is committed only if the function returns `nil`.
-Any panics inside the block are recovered and returned as standard Go errors.
+Read policies support primary-only, replica-required, and replica-preferred routing with primary fallback when no
+replica is available. Replica selection is round-robin by default and can be customized.
 
-## Migrations
+## Sharding
 
-`xpg` supports embedded SQL migrations out of the box using [golang-migrate](https://github.com/golang-migrate/migrate).
-
-First, create an `embed.go` file inside your migrations directory:
+`xpg` provides application-level sharding with explicit key routing across an immutable shard topology.
 
 <!-- @formatter:off -->
 ```go
-package migrations
+topology, err := shard.NewTopology([]shard.Config{
+    {Cluster: shardA},
+    {Cluster: shardB},
+})
+if err != nil {
+    panic(err)
+}
+defer topology.Close()
 
-import "embed"
-
-//go:embed *.sql
-var FS embed.FS
-```
-<!-- @formatter:on -->
-
-Then, pass the embedded filesystem using `WithMigrations`:
-
-<!-- @formatter:off -->
-```go
-writer, err := postgres.NewWriter(
-	postgres.WithConfig(&postgres.Config{
-		ClusterHost:        "127.0.0.1",
-		ClusterPort:        "5432",
-		ClusterReplicaPort: "5432",
-		User:               "user",
-		Password:           "pass",
-		DB:                 "postgres",
-		MigrateEnabled:     true,
-	}),
-	postgres.WithMigrations(migrations.FS),
+// Partition user IDs into shard ranges.
+users, err := resolver.NewRange(
+    topology,
+    []resolver.Range[uint64]{
+        {Start: 0, End: 100, ShardID: "shard-a"},
+        {Start: 100, End: 200, ShardID: "shard-b"},
+    },
 )
 if err != nil {
-	log.Fatalf("failed to initialize writer and run migrations: %v", err)
+    panic(err)
 }
-defer writer.Close()
-```
-<!-- @formatter:on -->
 
-Migrations will run automatically during `NewWriter` initialization if `MigrateEnabled` is set to `true`.
-
-Your SQL migration files must follow the standard `golang-migrate` naming convention:
-
-```text
-000001_create_users.up.sql
-000001_create_users.down.sql
-```
-
-## Observability
-
-`xpg` instruments PostgreSQL queries through native `pgx` tracing hooks and exposes pool metrics for Prometheus.
-
-<!-- @formatter:off -->
-```go
-writer, err := postgres.NewWriter(
-    postgres.WithConfig(cfg),
-    postgres.WithClientID("orders-service"),
-    postgres.WithTraceProvider(tracerProvider),
-    postgres.WithMetricsNamespace("orders"),
-)
+// Resolve the target shard.
+shard, err := users.Resolve(userID)
 if err != nil {
-    log.Fatalf("failed to initialize observed writer pool: %v", err)
+    panic(err)
 }
-defer writer.Close()
-```
-<!-- @formatter:on -->
 
+// Write to the shard primary.
+primaryPool := shard.Primary()
 
-The following Prometheus metric labels are added automatically:
-
-| Label | Description |
-| :--- | :--- |
-| `client_id` | Generated client identifier or configured ID with a unique suffix. |
-| `client_kind` | `writer` for writer pools, `reader` for reader pools. |
-| `db` | Database name from the configuration. |
-| `shard_id` | Shard ID from the configuration. |
-
-## Error Handling
-
-`xpg` provides normalized PostgreSQL error codes through `ConvertError`, so application code does not need to deal with
-raw `pgx` and `pgconn` error types directly.
-
-<!-- @formatter:off -->
-```go
-err := writer.QueryRow(ctx, "SELECT id FROM users WHERE id = \$1", userID).Scan(&id)
+_, err = primaryPool.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
 if err != nil {
-	pgErr := postgres.ConvertError(err)
+    panic(err)
+}
 
-	if pgErr.Code() == postgres.ErrNoRows {
-		// handle missing row
-		return nil
-	}
+// Read from the same shard using the selected read policy.
+readPool, err := shard.ReadPool(ctx, cluster.ReadReplicaPreferred)
+if err != nil {
+    panic(err)
+}
 
-	if pgErr.Code() == postgres.ErrSerializable {
-		// retry transaction
-		return nil
-	}
-
-	return pgErr
+var active bool
+err = readPool.QueryRow(ctx, "SELECT active FROM users WHERE id = $1", userID).Scan(&active)
+if err != nil {
+    panic(err)
 }
 ```
 <!-- @formatter:on -->
 
-Common PostgreSQL errors such as `ErrNoRows`, `ErrUniqViolation`, `ErrForeignKeyViolation`, and `ErrSerializable` are
-mapped to stable `xpg` error codes.
+Built-in routing strategies include rendezvous hashing, ordered ranges, time ranges, and custom resolvers. Sharding
+utilities cover key colocation, grouping by shard, and parallel operations across shards.
 
-## Configuration
+## Examples
 
-The `Config` struct can be initialized directly in Go. It also includes `envconfig` tags, allowing you to seamlessly
-populate it from environment variables using your preferred configuration library.
-
-### Config Struct
-
-<!-- @formatter:off -->
-```go
-cfg := &postgres.Config{
-	ClusterHost:        "127.0.0.1", // required
-	ClusterPort:        "5432",      // required, writer port
-	ClusterReplicaPort: "5433",      // required, reader port
-	User:               "user",      // required
-	Password:           "pass",      // required
-	DB:                 "mydb",      // required
-
-	MaxRWConn:       16,
-	MaxROConn:       16,
-	MaxConnLifetime: 5 * time.Minute,
-	MaxConnIdleTime: 30 * time.Second,
-
-	MigrateEnabled: true,
-}
-```
-<!-- @formatter:on -->
-
-The connection DSN is dynamically built from the `Config` fields using the following format:
-
-```text
-postgres://user:pass@host:port/db?sslmode=disable&application_name=<id>&<args>
-```
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-| :--- | :---: | :--- | :--- |
-| `POSTGRES_CLUSTER_HOST` | ✓ | — | Database host. |
-| `POSTGRES_CLUSTER_PORT` | ✓ | — | Writer pool port. |
-| `POSTGRES_CLUSTER_REPLICA_PORT` | ✓ | — | Reader pool port. |
-| `POSTGRES_USER` | ✓ | — | Database user. |
-| `POSTGRES_PASSWORD` | ✓ | — | Database password. |
-| `POSTGRES_DB` | ✓ | — | Database name. |
-| `POSTGRES_SHARD_ID` | | `0` | Shard ID exposed in metrics. |
-| `POSTGRES_MIN_RW_CONN` | | `1` | Minimum connections in the writer pool. |
-| `POSTGRES_MIN_RO_CONN` | | `1` | Minimum connections in the reader pool. |
-| `POSTGRES_MAX_RW_CONN` | | `max(4, NumCPU)`| Maximum connections in the writer pool. |
-| `POSTGRES_MAX_RO_CONN` | | `max(4, NumCPU)`| Maximum connections in the reader pool. |
-| `POSTGRES_MAX_CONN_LIFETIME` | | `1m` | Maximum connection lifetime. |
-| `POSTGRES_MAX_CONN_IDLE_TIME` | | `30s` | Maximum idle connection lifetime. |
-| `POSTGRES_QUERY_EXEC_MODE` | | `cache_statement` | Query execution mode. |
-| `POSTGRES_STATEMENT_CACHE_CAPACITY` | | `128` | Statement cache size. |
-| `POSTGRES_DESCRIPTION_CACHE_CAPACITY`| | `512` | Description cache size. |
-| `POSTGRES_WRITER_ARGS` | | — | Extra DSN args for the writer connection. |
-| `POSTGRES_REPLICA_ARGS` | | — | Extra DSN args for the reader connection. |
-| `POSTGRES_MIGRATE_ENABLED` | | `false` | Run migrations on writer startup. |
-| `POSTGRES_MIGRATE_PORT` | | `POSTGRES_CLUSTER_PORT` | Port used for migrations. |
-| `POSTGRES_MIGRATE_ARGS` | | — | Extra DSN args for the migration connection. |
-
-### Query Execution Modes
-
-| Value | Protocol | Round Trips | Description |
-| :--- | :--- | :--- | :--- |
-| `cache_statement` | Extended | 1 after warm-up | Automatically prepares and caches statements. **Default.** May fail on first execution after schema changes. |
-| `cache_describe` | Extended | 1 after warm-up | Caches argument and result type descriptions instead of prepared statements. Has the same schema-change caveat. |
-| `describe_exec` | Extended | 2 | Fetches description on every execution, then executes. Safer with concurrent schema changes, but may break with connection poolers that switch connections between round trips. |
-| `exec` | Extended | 1 | No prepare and no describe. Infers PostgreSQL types from Go types using text format. Register custom types with `pgtype.Map.RegisterDefaultPgType`. |
-| `simple_protocol` | Simple | 1 | Uses the simple protocol. Useful with PgBouncer or proxies that do not support the extended protocol. Prefer `exec` when possible. |
-
-> 💡 **Tip for connection pooling:** For PgBouncer **transaction** pooling, use `simple_protocol`. For **session**
-> pooling, `cache_statement` usually works fine.
+See the [examples](examples) directory for runnable examples covering the main `xpg` usage patterns.
 
 ## License
 
