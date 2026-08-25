@@ -2,24 +2,15 @@ package main
 
 import (
 	"context"
-	_ "embed"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mkbeh/xpg"
 )
 
-const (
-	defaultDatabaseURL  = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
-	uniqueViolationCode = "23505"
-)
-
-//go:embed setup.sql
-var setupSQL string
+const defaultDatabaseURL = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 
 func main() {
 	if err := run(context.Background()); err != nil {
@@ -34,16 +25,12 @@ func run(ctx context.Context) error {
 		xpg.WithName("transactions-example"),
 	)
 	if err != nil {
-		return fmt.Errorf("create pool: %w", err)
+		return fmt.Errorf("open pool: %w", err)
 	}
 	defer pool.Close()
 
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("ping PostgreSQL: %w", err)
-	}
-
-	if err := prepareExample(ctx, pool); err != nil {
-		return fmt.Errorf("prepare example: %w", err)
 	}
 
 	const (
@@ -55,36 +42,15 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("process order: %w", err)
 	}
 
-	status, promoApplied, err := loadOrderResult(
-		ctx,
-		pool,
-		orderID,
-		promoCode,
-	)
+	status, promoApplied, err := loadOrder(ctx, pool, orderID, promoCode)
 	if err != nil {
-		return fmt.Errorf("load order result: %w", err)
+		return fmt.Errorf("load order: %w", err)
 	}
 
 	fmt.Printf("order ID: %d\n", orderID)
 	fmt.Printf("order status: %s\n", status)
 	fmt.Printf("promo code: %s\n", promoCode)
 	fmt.Printf("promo applied: %t\n", promoApplied)
-
-	return nil
-}
-
-func prepareExample(
-	ctx context.Context,
-	pool *xpg.Pool,
-) error {
-	_, err := pool.Exec(
-		ctx,
-		setupSQL,
-		pgx.QueryExecModeSimpleProtocol,
-	)
-	if err != nil {
-		return fmt.Errorf("execute setup SQL: %w", err)
-	}
 
 	return nil
 }
@@ -99,15 +65,16 @@ func processOrder(
 		ctx,
 		pgx.TxOptions{},
 		func(ctx context.Context, tx pgx.Tx) error {
-			// The order must be committed even when the optional promo fails.
 			if _, err := tx.Exec(
 				ctx,
 				`INSERT INTO xpg_transactions_example.orders (id, status)
-				 VALUES ($1, $2)`,
+				 VALUES ($1, $2)
+				 ON CONFLICT (id) DO UPDATE
+				 SET status = EXCLUDED.status`,
 				orderID,
 				"new",
 			); err != nil {
-				return fmt.Errorf("create order: %w", err)
+				return fmt.Errorf("upsert order: %w", err)
 			}
 
 			err := xpg.InSavepoint(
@@ -116,16 +83,11 @@ func processOrder(
 				func(ctx context.Context, savepoint pgx.Tx) error {
 					_, err := savepoint.Exec(
 						ctx,
-						`
-							INSERT INTO xpg_transactions_example.promo_redemptions (
-								code,
-								order_id
-							)
-							VALUES (
-								$1,
-								$2
-							)
-						`,
+						`INSERT INTO xpg_transactions_example.promo_redemptions (
+							code,
+							order_id
+						)
+						VALUES ($1, $2)`,
 						promoCode,
 						orderID,
 					)
@@ -137,9 +99,8 @@ func processOrder(
 				return nil
 			}
 
-			if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok &&
-				pgErr.Code == uniqueViolationCode {
-				// InSavepoint has already rolled back the failed promo insert.
+			if xpg.IsUniqueViolation(err) {
+				// InSavepoint already rolled back the failed promo insert.
 				return nil
 			}
 
@@ -148,7 +109,7 @@ func processOrder(
 	)
 }
 
-func loadOrderResult(
+func loadOrder(
 	ctx context.Context,
 	pool *xpg.Pool,
 	orderID int64,
@@ -169,8 +130,8 @@ func loadOrderResult(
 				WHERE p.order_id = o.id
 				  AND p.code = $2
 			)
-		 FROM xpg_transactions_example.orders AS o
-		 WHERE o.id = $1`,
+		FROM xpg_transactions_example.orders AS o
+		WHERE o.id = $1`,
 		orderID,
 		promoCode,
 	).Scan(

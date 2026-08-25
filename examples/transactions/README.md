@@ -1,61 +1,38 @@
 # Transactions and savepoints
 
-This example creates an order in a transaction and applies an optional promo code inside a PostgreSQL savepoint.
-The promo code is already used, so only the savepoint is rolled back while the outer transaction commits the order.
+This example shows how to keep an outer transaction commit-able when an optional operation fails:
 
-**This example demonstrates:**
+* Execute the main operation inside a transaction
+* Isolate optional work with a savepoint
+* Detect an expected PostgreSQL constraint violation
+* Roll back only the savepoint while allowing the outer transaction to commit
 
-* Creating an `xpg.Pool` and explicitly checking PostgreSQL connectivity
-* Executing a callback with an explicit `pgx.Tx`
-* Isolating an optional operation with `xpg.InSavepoint`
-* Inspecting a wrapped `pgconn.PgError`
-* Continuing and committing the outer transaction after a savepoint rollback
+The example attempts to redeem `PROMO2026`, which is already in use. The promo write fails and is rolled back to the
+savepoint, while the order is committed successfully.
 
-## Configuration
+## Local setup
 
-The example connects to PostgreSQL using:
-
-```text
-postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-```
-
-Set `XPG_DATABASE_URL` to use another connection string:
+From this directory, start PostgreSQL and Adminer:
 
 ```shell
-export XPG_DATABASE_URL='postgres://user:password@localhost:5432/database?sslmode=disable'
+docker compose up -d
 ```
 
-## Local PostgreSQL setup
-
-The example can use the local PostgreSQL setup from `examples/docker-compose.yml`.
-
-From the repository root:
+Apply the example schema:
 
 ```shell
-docker compose -f examples/docker-compose.yml --profile tools up -d
+psql 'postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' \
+  < sql/schema.sql
 ```
 
-Or from this example directory:
-
-```shell
-docker compose -f ../docker-compose.yml --profile tools up -d
-```
-
-To start only PostgreSQL, omit `--profile tools`.
-
-PostgreSQL is available to applications running on the host at:
+The services are available at:
 
 ```text
-localhost:5432
+PostgreSQL: localhost:5432
+Adminer:    http://localhost:8080
 ```
 
-Adminer is available at:
-
-```text
-http://localhost:8080
-```
-
-Sign in to Adminer with:
+To inspect the example data in Adminer, sign in with:
 
 ```text
 System:   PostgreSQL
@@ -65,13 +42,25 @@ Password: postgres
 Database: postgres
 ```
 
-> [!IMPORTANT]
-> Use `postgres`, not `localhost`, in the **Server** field. Adminer connects to PostgreSQL through the Docker Compose
-> network, where the database is discoverable by its service name.
+## Configuration
+
+By default, the example connects to:
+
+```text
+postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+```
+
+To use another PostgreSQL instance, set `XPG_DATABASE_URL`:
+
+```shell
+export XPG_DATABASE_URL='postgres://user:password@localhost:5432/database?sslmode=disable'
+```
+
+The target database must contain the schema from `sql/schema.sql`.
 
 ## Run
 
-From this example directory:
+From this directory:
 
 ```shell
 go run .
@@ -92,31 +81,26 @@ promo code: PROMO2026
 promo applied: false
 ```
 
-The order is committed because the unique-key error is confined to the savepoint. `InSavepoint` rolls the failed promo
-insert back before the outer transaction decides that this specific error is non-fatal.
+The failed promo insert is rolled back to the savepoint. The outer transaction then returns `nil`, so the order is
+committed.
 
-## Inspect the result
+## Cleanup
 
-The embedded `setup.sql` recreates the `xpg_transactions_example` schema before each run and leaves the resulting data
-available for inspection.
-
-In Adminer, open the `xpg_transactions_example` schema and inspect:
-
-```text
-orders
-promo_redemptions
-```
-
-## Stop services
-
-From the repository root:
+To remove the example schema and data:
 
 ```shell
-docker compose -f examples/docker-compose.yml --profile tools down --remove-orphans -v
+psql 'postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' \
+  -c 'DROP SCHEMA IF EXISTS xpg_transactions_example CASCADE;'
 ```
 
-Or from this example directory:
+Stop the local services:
 
 ```shell
-docker compose -f ../docker-compose.yml --profile tools down --remove-orphans -v
+docker compose down
+```
+
+To also remove the PostgreSQL data volume:
+
+```shell
+docker compose down -v
 ```
