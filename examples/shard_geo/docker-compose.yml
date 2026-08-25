@@ -1,0 +1,50 @@
+services:
+  postgres-shard-eu:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "57431:5432"
+    volumes:
+      - shard-eu-data:/var/lib/postgresql
+    healthcheck:
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres-shard-us:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "57432:5432"
+    volumes:
+      - shard-us-data:/var/lib/postgresql
+    healthcheck:
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  adminer:
+    image: adminer:standalone
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-shard-eu
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-shard-eu:
+        condition: service_healthy
+      postgres-shard-us:
+        condition: service_healthy
+
+volumes:
+  shard-eu-data:
+  shard-us-data:
