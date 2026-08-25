@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 
@@ -12,12 +11,9 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-type metricsRuntime struct {
-	handler       http.Handler
-	meterProvider *sdkmetric.MeterProvider
-}
-
-func newMetricsRuntime(res *resource.Resource) (*metricsRuntime, error) {
+func newMeterProvider(
+	resource *resource.Resource,
+) (*sdkmetric.MeterProvider, http.Handler, error) {
 	registry := promclient.NewRegistry()
 
 	exporter, err := otelprom.New(
@@ -25,31 +21,21 @@ func newMetricsRuntime(res *resource.Resource) (*metricsRuntime, error) {
 		otelprom.WithoutScopeInfo(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create Prometheus exporter: %w", err)
+		return nil, nil, fmt.Errorf(
+			"create Prometheus exporter: %w",
+			err,
+		)
 	}
 
 	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
+		sdkmetric.WithResource(resource),
 		sdkmetric.WithReader(exporter),
 	)
 
-	return &metricsRuntime{
-		handler: promhttp.HandlerFor(
-			registry,
-			promhttp.HandlerOpts{},
-		),
-		meterProvider: meterProvider,
-	}, nil
-}
+	handler := promhttp.HandlerFor(
+		registry,
+		promhttp.HandlerOpts{},
+	)
 
-func (m *metricsRuntime) Handler() http.Handler {
-	return m.handler
-}
-
-func (m *metricsRuntime) MeterProvider() *sdkmetric.MeterProvider {
-	return m.meterProvider
-}
-
-func (m *metricsRuntime) Shutdown(ctx context.Context) error {
-	return m.meterProvider.Shutdown(ctx)
+	return meterProvider, handler, nil
 }

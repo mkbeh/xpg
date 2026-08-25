@@ -50,36 +50,42 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger) (runErr error) {
-	res, err := newOTelResource(ctx)
+	resource, err := newOTelResource(ctx)
 	if err != nil {
 		return err
 	}
 
-	metrics, err := newMetricsRuntime(res)
+	meterProvider, metricsHandler, err := newMeterProvider(resource)
 	if err != nil {
 		return fmt.Errorf("initialize metrics: %w", err)
 	}
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
 		defer cancel()
 
 		runErr = errors.Join(
 			runErr,
-			metrics.Shutdown(shutdownCtx),
+			meterProvider.Shutdown(shutdownCtx),
 		)
 	}()
 
-	tracing, err := newTracingRuntime(res)
+	tracerProvider, err := newTracerProvider(resource)
 	if err != nil {
 		return fmt.Errorf("initialize tracing: %w", err)
 	}
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
 		defer cancel()
 
 		runErr = errors.Join(
 			runErr,
-			tracing.Shutdown(shutdownCtx),
+			tracerProvider.Shutdown(shutdownCtx),
 		)
 	}()
 
@@ -91,7 +97,9 @@ func run(ctx context.Context, logger *slog.Logger) (runErr error) {
 	// A small pool makes contention visible when POST /load runs.
 	config.MaxConns = 2
 
-	pgxLogger := logger.With(slog.String("component", "pgx"))
+	pgxLogger := logger.With(
+		slog.String("component", "pgx"),
+	)
 
 	pool, err := xpg.New(
 		ctx,
@@ -104,16 +112,13 @@ func run(ctx context.Context, logger *slog.Logger) (runErr error) {
 		),
 		xpg.WithTracer(
 			otelpgx.NewTracer(
-				otelpgx.WithTracerProvider(
-					tracing.TracerProvider(),
-				),
+				otelpgx.WithTracerProvider(tracerProvider),
+				otelpgx.WithTrimSQLInSpanName(),
 			),
 		),
 		xpg.WithMetrics(
 			otelxpg.NewMetrics(
-				otelxpg.WithMeterProvider(
-					metrics.MeterProvider(),
-				),
+				otelxpg.WithMeterProvider(meterProvider),
 			),
 		),
 	)
@@ -127,8 +132,14 @@ func run(ctx context.Context, logger *slog.Logger) (runErr error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /metrics", metrics.Handler())
-	mux.HandleFunc("POST /load", loadHandler(pool, tracing.Tracer()))
+	mux.Handle("GET /metrics", metricsHandler)
+	mux.HandleFunc(
+		"POST /load",
+		loadHandler(
+			pool,
+			tracerProvider.Tracer(tracingInstrumentationName),
+		),
+	)
 
 	server := &http.Server{
 		Addr:              httpAddress(),
@@ -165,7 +176,10 @@ func serveHTTP(ctx context.Context, server *http.Server) error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
@@ -179,9 +193,15 @@ func serveHTTP(ctx context.Context, server *http.Server) error {
 	return nil
 }
 
-func loadHandler(pool *xpg.Pool, tracer trace.Tracer) http.HandlerFunc {
+func loadHandler(
+	pool *xpg.Pool,
+	tracer trace.Tracer,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, request *http.Request) {
-		ctx, span := tracer.Start(request.Context(), "run-load")
+		ctx, span := tracer.Start(
+			request.Context(),
+			"run-load",
+		)
 		defer span.End()
 
 		startedAt := time.Now()
@@ -199,7 +219,11 @@ func loadHandler(pool *xpg.Pool, tracer trace.Tracer) http.HandlerFunc {
 			return
 		}
 
-		_, _ = fmt.Fprintf(w, "workload completed in %s\n", time.Since(startedAt))
+		_, _ = fmt.Fprintf(
+			w,
+			"workload completed in %s\n",
+			time.Since(startedAt),
+		)
 	}
 }
 
