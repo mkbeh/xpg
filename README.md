@@ -34,7 +34,7 @@ connection management, routing, and common production workflows.
 
 ## Installation
 
-This repository contains the core `xpg` module. The core package is released from the repository root:
+This repository contains the core `xpg` module. The core module is released from the repository root:
 
 ```bash
 go get github.com/mkbeh/xpg
@@ -46,7 +46,7 @@ Optional integrations are released independently under `extra`:
 go get github.com/mkbeh/xpg/extra/otelxpg
 ```
 
-## Quick start
+## Usage
 
 Open an `xpg` pool and execute a PostgreSQL query:
 
@@ -72,6 +72,63 @@ if err != nil {
 fmt.Println(message) // Outputs: hello from xpg
 ```
 <!-- @formatter:on -->
+
+### Transactions
+
+`xpg` provides managed transactions using the native `pgx` transaction API. Returning `nil` commits the transaction;
+returning an error rolls it back.
+
+<!-- @formatter:off -->
+```go
+err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
+	return err
+})
+```
+<!-- @formatter:on -->
+
+Savepoints can isolate optional work without aborting the outer transaction.
+
+### Advisory Locks
+
+`xpg` provides transaction-level PostgreSQL advisory locks for coordinating concurrent work.
+
+<!-- @formatter:off -->
+```go
+err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
+	if err := xpg.AdvisoryXactLock(ctx, tx, lockID); err != nil {
+		return err
+	}
+
+	_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'running' WHERE id = $1", jobID)
+	return err
+})
+```
+<!-- @formatter:on -->
+
+The lock is held for the duration of the transaction and released automatically on commit or rollback.
+
+### Error Handling
+
+`xpg` provides helpers for classifying PostgreSQL errors and inspecting SQLSTATE codes.
+
+<!-- @formatter:off -->
+```go
+_, err := pool.Exec(ctx, "INSERT INTO users (id, email) VALUES ($1, $2)", userID, email)
+
+switch {
+case xpg.IsUniqueViolation(err):
+    // Handle duplicate data.
+case xpg.IsRetryableTransaction(err):
+    // Retry the transaction when the operation is safe to replay.
+case err != nil:
+    return err
+}
+```
+<!-- @formatter:on -->
+
+The underlying SQLSTATE code is also available through `xpg.SQLState`. Helpers cover constraint violations,
+serialization failures, deadlocks, lock errors, query cancellation, and connection failures.
 
 ## Clustering
 
@@ -170,7 +227,7 @@ if err != nil {
 <!-- @formatter:on -->
 
 Built-in routing strategies include rendezvous hashing, ordered ranges, time ranges, and custom resolvers. Sharding
-utilities cover key colocation, grouping by shard, and bounded concurrent fan-out.
+utilities cover key colocation, grouping by shard, and parallel operations across shards.
 
 ## Examples
 
