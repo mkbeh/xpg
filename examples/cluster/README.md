@@ -1,67 +1,47 @@
 # Cluster routing
 
-This example routes reads and transactions across one primary pool and two replica pools with `cluster.Cluster`.
+This example shows how `cluster.Cluster` coordinates primary and replica access:
 
-```text
-                 ┌─ primary
-application ─ cluster
-                 ├─ replica-one
-                 └─ replica-two
-```
-
-**This example demonstrates:**
-
-* Creating a cluster from primary and replica pools
-* Routing reads to the primary or replicas
-* Distributing replica reads with round-robin
-* Running primary and read-only replica transactions
+* Route reads explicitly to the primary or replicas
+* Distribute replica reads with round-robin selection
+* Run write transactions on the primary
+* Run read-only transactions on replicas
 
 > [!NOTE]
-> The local containers are independent PostgreSQL instances used to demonstrate routing. They do not configure streaming
-replication.
-
-## Configuration
-
-The example uses the following connection strings by default:
-
-```text
-XPG_PRIMARY_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable&target_session_attrs=read-write
-XPG_REPLICA_ONE_DATABASE_URL=postgres://postgres:postgres@localhost:55433/postgres?sslmode=disable&target_session_attrs=read-only
-XPG_REPLICA_TWO_DATABASE_URL=postgres://postgres:postgres@localhost:55434/postgres?sslmode=disable&target_session_attrs=read-only
-```
-
-Set the corresponding environment variables to use different PostgreSQL endpoints:
-
-```shell
-export XPG_PRIMARY_DATABASE_URL='postgres://user:password@primary.example.com:5432/database?sslmode=disable&target_session_attrs=read-write'
-export XPG_REPLICA_ONE_DATABASE_URL='postgres://user:password@replica-one.example.com:5432/database?sslmode=disable&target_session_attrs=read-only'
-export XPG_REPLICA_TWO_DATABASE_URL='postgres://user:password@replica-two.example.com:5432/database?sslmode=disable&target_session_attrs=read-only'
-```
+> The local services are independent PostgreSQL instances used only to demonstrate routing. They do not configure
+> streaming replication.
 
 ## Local setup
 
-Start the primary, both replica endpoints, and Adminer from the repository root:
+From this directory, start the three PostgreSQL nodes and Adminer:
 
 ```shell
-docker compose -f examples/cluster/docker-compose.yml --profile tools up -d
+docker compose up -d
 ```
 
-Or from this example directory:
+Apply the node-specific setup:
 
 ```shell
-docker compose --profile tools up -d
+psql 'postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable' \
+  < sql/primary.sql
+
+psql 'postgres://postgres:postgres@localhost:55433/postgres?sslmode=disable' \
+  < sql/replica-one.sql
+
+psql 'postgres://postgres:postgres@localhost:55434/postgres?sslmode=disable' \
+  < sql/replica-two.sql
 ```
 
-Services are available at:
+The services are available at:
 
 ```text
-Primary:    localhost:55432
-Replica 1:  localhost:55433
-Replica 2:  localhost:55434
-Adminer:    http://localhost:58080
+Primary:   localhost:55432
+Replica 1: localhost:55433
+Replica 2: localhost:55434
+Adminer:   http://localhost:8080
 ```
 
-Sign in to Adminer with:
+To inspect the nodes in Adminer, sign in with:
 
 ```text
 System:   PostgreSQL
@@ -71,21 +51,20 @@ Password: postgres
 Database: postgres
 ```
 
-Use `postgres-replica-one` or `postgres-replica-two` in the **Server** field to inspect the replica endpoints.
+Use `postgres-replica-one` or `postgres-replica-two` in the **Server** field to inspect a replica.
 
-## Run
+## Configuration
 
-From this directory:
+By default, the example connects to:
 
-```shell
-go run .
+```text
+Primary:   postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable&target_session_attrs=read-write
+Replica 1: postgres://postgres:postgres@localhost:55433/postgres?sslmode=disable&target_session_attrs=read-only
+Replica 2: postgres://postgres:postgres@localhost:55434/postgres?sslmode=disable&target_session_attrs=read-only
 ```
 
-Or from the repository root:
-
-```shell
-go run ./examples/basic
-```
+To use other PostgreSQL endpoints, set `XPG_PRIMARY_DATABASE_URL`, `XPG_REPLICA_ONE_DATABASE_URL`, and
+`XPG_REPLICA_TWO_DATABASE_URL`.
 
 ## Run
 
@@ -104,7 +83,7 @@ go run ./examples/cluster
 ## Expected output
 
 ```text
-primary:
+primary read:
 - pool=cluster.primary node=primary role=primary
 replica reads:
 - pool=cluster.replica-one node=replica-one role=replica
@@ -114,25 +93,19 @@ transactions:
 - replica node=replica-one read_only=on
 ```
 
-The example performs one complete round-robin pass across the configured replicas before starting the read-only
-transaction.
+The two replica reads show one complete round-robin cycle. The following read transaction continues from the same
+selector and therefore resolves the first replica again.
 
-Pools remain owned by the caller until `cluster.New` succeeds. After successful cluster creation, `cluster.Cluster` owns
-the pools and closes them when `Cluster.Close` is called.
+## Cleanup
 
-## Stop services
-
-From the repository root:
+Stop the local services:
 
 ```shell
-docker compose \
-  -f examples/cluster/docker-compose.yml \
-  --profile tools \
-  down --remove-orphans -v
+docker compose down
 ```
 
-Or from this example directory:
+To also remove all PostgreSQL data volumes:
 
 ```shell
-docker compose --profile tools down --remove-orphans -v
+docker compose down -v
 ```

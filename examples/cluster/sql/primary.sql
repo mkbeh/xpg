@@ -1,3 +1,8 @@
+ALTER DATABASE postgres
+SET default_transaction_read_only = off;
+
+DROP SCHEMA IF EXISTS xpg_cluster_example CASCADE;
+
 CREATE SCHEMA xpg_cluster_example;
 
 CREATE TABLE xpg_cluster_example.node_info (
@@ -12,9 +17,4 @@ INSERT INTO xpg_cluster_example.node_info (
 VALUES (
     'primary',
     'primary'
-);
-
-CREATE TABLE xpg_cluster_example.primary_writes (
-    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    created_at timestamptz NOT NULL DEFAULT now()
 );

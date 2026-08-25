@@ -9,7 +9,6 @@ services:
       - "55432:5432"
     volumes:
       - primary-data:/var/lib/postgresql
-      - ./sql/primary.sql:/docker-entrypoint-initdb.d/10-node.sql:ro
     healthcheck:
       test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
       interval: 2s
@@ -27,7 +26,6 @@ services:
       - "55433:5432"
     volumes:
       - replica-one-data:/var/lib/postgresql
-      - ./sql/replica-one.sql:/docker-entrypoint-initdb.d/10-node.sql:ro
     healthcheck:
       test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
       interval: 2s
@@ -45,7 +43,6 @@ services:
       - "55434:5432"
     volumes:
       - replica-two-data:/var/lib/postgresql
-      - ./sql/replica-two.sql:/docker-entrypoint-initdb.d/10-node.sql:ro
     healthcheck:
       test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
       interval: 2s
@@ -55,8 +52,6 @@ services:
 
   adminer:
     image: adminer:standalone
-    profiles:
-      - tools
     environment:
       ADMINER_DEFAULT_SERVER: postgres-primary
     ports:
