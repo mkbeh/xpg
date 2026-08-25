@@ -19,7 +19,7 @@ type Shard struct {
 	cluster *cluster.Cluster
 }
 
-// ID returns the stable logical shard ID.
+// ID returns the logical shard ID.
 func (s Shard) ID() ID {
 	if s.cluster == nil {
 		return ""
@@ -46,9 +46,10 @@ func (s Shard) Labels() map[string]string {
 	return s.cluster.Labels()
 }
 
-// Primary returns the shard primary pool, or nil when the shard cluster has no
-// primary configured. The returned pool is borrowed and remains owned by the
-// shard cluster.
+// Primary returns the shard primary pool.
+//
+// Primary returns nil when no primary is configured. The returned pool is
+// borrowed and must not be closed separately.
 func (s Shard) Primary() *xpg.Pool {
 	if s.cluster == nil {
 		return nil
@@ -57,7 +58,7 @@ func (s Shard) Primary() *xpg.Pool {
 	return s.cluster.Primary()
 }
 
-// ReadPool returns a borrowed pool for a read operation according to policy.
+// ReadPool returns a borrowed pool according to policy.
 func (s Shard) ReadPool(
 	ctx context.Context,
 	policy cluster.ReadPolicy,
@@ -82,7 +83,8 @@ func (s Shard) InPrimaryTx(
 	return s.cluster.InPrimaryTx(ctx, options, fn)
 }
 
-// InReadTx executes fn in a read-only transaction resolved within this shard.
+// InReadTx executes fn in a read-only transaction on a pool selected according
+// to policy within the shard.
 func (s Shard) InReadTx(
 	ctx context.Context,
 	policy cluster.ReadPolicy,

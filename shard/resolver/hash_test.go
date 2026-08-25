@@ -13,19 +13,50 @@ func TestNewHashValidatesArguments(t *testing.T) {
 
 	topology := newTestTopology(t, "shard-a")
 
-	if resolver, err := NewHash[string](nil, "users", StringKeyEncoder()); err == nil {
-		_ = resolver
-		t.Fatal("expected topology error")
+	tests := []struct {
+		name      string
+		topology  *shard.Topology
+		namespace string
+		encoder   KeyEncoder[string]
+		wantError string
+	}{
+		{
+			name:      "nil topology",
+			namespace: "users",
+			encoder:   StringKeyEncoder(),
+			wantError: "xpg/shard/resolver: topology is nil or empty",
+		},
+		{
+			name:      "nil encoder",
+			topology:  topology,
+			namespace: "users",
+			wantError: "xpg/shard/resolver: key encoder is nil",
+		},
+		{
+			name:      "empty namespace",
+			topology:  topology,
+			encoder:   StringKeyEncoder(),
+			wantError: "xpg/shard/resolver: hash namespace must not be empty",
+		},
 	}
 
-	if resolver, err := NewHash[string](topology, "users", nil); err == nil {
-		_ = resolver
-		t.Fatal("expected encoder error")
-	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	if resolver, err := NewHash(topology, "", StringKeyEncoder()); err == nil {
-		_ = resolver
-		t.Fatal("expected namespace error")
+			_, err := NewHash(
+				test.topology,
+				test.namespace,
+				test.encoder,
+			)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+
+			if got := err.Error(); got != test.wantError {
+				t.Fatalf("error = %q, want %q", got, test.wantError)
+			}
+		})
 	}
 }
 
@@ -76,13 +107,20 @@ func TestHashResolverStablePlacementVectors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.key, func(t *testing.T) {
+			t.Parallel()
+
 			resolved, err := resolver.Resolve(test.key)
 			if err != nil {
 				t.Fatalf("Resolve() error = %v", err)
 			}
 
 			if got := resolved.ID(); got != test.want {
-				t.Fatalf("Resolve(%q).ID() = %q, want %q", test.key, got, test.want)
+				t.Fatalf(
+					"Resolve(%q).ID() = %q, want %q",
+					test.key,
+					got,
+					test.want,
+				)
 			}
 		})
 	}
@@ -98,6 +136,7 @@ func TestHashResolverPlacementDoesNotDependOnTopologyOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHash(first) error = %v", err)
 	}
+
 	secondResolver, err := NewHash(second, "users", StringKeyEncoder())
 	if err != nil {
 		t.Fatalf("NewHash(second) error = %v", err)
@@ -108,6 +147,7 @@ func TestHashResolverPlacementDoesNotDependOnTopologyOrder(t *testing.T) {
 		if err != nil {
 			t.Fatalf("first Resolve(%q) error = %v", key, err)
 		}
+
 		secondShard, err := secondResolver.Resolve(key)
 		if err != nil {
 			t.Fatalf("second Resolve(%q) error = %v", key, err)
@@ -134,6 +174,7 @@ func TestHashResolverAddingShardOnlyMovesKeysToNewShard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHash(before) error = %v", err)
 	}
+
 	afterResolver, err := NewHash(after, "users", StringKeyEncoder())
 	if err != nil {
 		t.Fatalf("NewHash(after) error = %v", err)
@@ -148,6 +189,7 @@ func TestHashResolverAddingShardOnlyMovesKeysToNewShard(t *testing.T) {
 		if err != nil {
 			t.Fatalf("before Resolve(%q) error = %v", key, err)
 		}
+
 		current, err := afterResolver.Resolve(key)
 		if err != nil {
 			t.Fatalf("after Resolve(%q) error = %v", key, err)
@@ -158,6 +200,7 @@ func TestHashResolverAddingShardOnlyMovesKeysToNewShard(t *testing.T) {
 		}
 
 		moved++
+
 		if current.ID() != "shard-c" {
 			t.Fatalf(
 				"Resolve(%q) moved from %q to existing shard %q",

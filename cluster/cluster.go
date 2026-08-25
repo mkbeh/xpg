@@ -3,6 +3,7 @@ package cluster
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 
@@ -14,9 +15,9 @@ type ID string
 
 // Config configures a Cluster from independently created pools.
 //
-// ID and Labels are optional cluster metadata. New takes ownership of Primary
-// and Replicas only after it returns successfully. Cluster.Close closes the
-// owned pools.
+// ID and Labels are optional metadata. New takes ownership of Primary and
+// Replicas only after it returns successfully. Cluster.Close closes all owned
+// pools.
 type Config struct {
 	ID     ID
 	Labels map[string]string
@@ -26,8 +27,8 @@ type Config struct {
 	Selector ReplicaSelector
 }
 
-// Cluster routes operations across an optional primary pool and zero or more
-// replica pools.
+// Cluster represents a logical PostgreSQL cluster composed of an optional
+// primary pool and zero or more replica pools.
 //
 // A deployment with one PostgreSQL endpoint is represented by a Cluster with
 // one Primary and no Replicas. A read-only deployment may omit Primary and
@@ -95,7 +96,7 @@ func New(config Config) (*Cluster, error) {
 	}, nil
 }
 
-// ID returns the stable logical cluster ID.
+// ID returns the logical cluster ID.
 func (c *Cluster) ID() ID {
 	if c == nil {
 		return ""
@@ -148,30 +149,35 @@ func (c *Cluster) ReplicaCount() int {
 // ReplicaAt returns the replica at index in registration order.
 //
 // The returned pool is borrowed and must not be closed separately. ReplicaAt
-// panics when c is nil or index is outside the replica set, matching ordinary
-// slice indexing semantics.
+// panics when c is nil or index is out of range.
 func (c *Cluster) ReplicaAt(index int) *xpg.Pool {
 	return c.replicas[index]
 }
 
-// Close closes all replica pools in reverse registration order and then closes
-// the primary pool when one is configured.
-//
-// Close is safe to call multiple times.
+// Close closes replicas in reverse registration order, then closes the primary
+// when one is configured. Close is safe to call multiple times.
 func (c *Cluster) Close() {
 	if c == nil {
 		return
 	}
 
 	c.closeOnce.Do(func() {
-		for _, v := range slices.Backward(c.replicas) {
-			v.Close()
+		for _, replica := range slices.Backward(c.replicas) {
+			replica.Close()
 		}
 
 		if c.primary != nil {
 			c.primary.Close()
 		}
 	})
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+
+	return maps.Clone(labels)
 }
 
 func validateLabels(labels map[string]string) error {

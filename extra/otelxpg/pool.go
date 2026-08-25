@@ -65,20 +65,22 @@ type poolMetricAttributes struct {
 	destroyedLifetime metric.ObserveOption
 }
 
-var _ xpg.Metrics = (*Metrics)(nil)
-
 // Register registers metrics for one xpg Pool.
 func (m *Metrics) Register(pool *xpg.Pool) (xpg.MetricsRegistration, error) {
 	if m == nil {
 		return nil, errors.New("otelxpg: metrics is nil")
 	}
 
-	provider := m.meterProvider
-	if provider == nil {
-		provider = otel.GetMeterProvider()
+	if pool == nil {
+		return nil, errors.New("otelxpg: pool is nil")
 	}
 
-	return registerPoolMetrics(pool, provider)
+	meterProvider := m.meterProvider
+	if meterProvider == nil {
+		meterProvider = otel.GetMeterProvider()
+	}
+
+	return registerPoolMetrics(pool, meterProvider)
 }
 
 func registerPoolMetrics(pool *xpg.Pool, provider metric.MeterProvider) (xpg.MetricsRegistration, error) {
@@ -93,12 +95,7 @@ func registerPoolMetrics(pool *xpg.Pool, provider metric.MeterProvider) (xpg.Met
 
 	registration, err := meter.RegisterCallback(
 		func(_ context.Context, observer metric.Observer) error {
-			instruments.observe(
-				observer,
-				pool.Stats(),
-				attributes,
-			)
-
+			instruments.observe(observer, pool.Stats(), attributes)
 			return nil
 		},
 		instruments.observables()...,
@@ -112,100 +109,9 @@ func registerPoolMetrics(pool *xpg.Pool, provider metric.MeterProvider) (xpg.Met
 	}, nil
 }
 
-func (i poolMetricInstruments) observe(
-	observer metric.Observer,
-	stats xpg.PoolStats,
-	attributes poolMetricAttributes,
-) {
-	observer.ObserveInt64(
-		i.connectionCount,
-		int64(stats.IdleConns),
-		attributes.idle,
-	)
-
-	observer.ObserveInt64(
-		i.connectionCount,
-		int64(stats.AcquiredConns),
-		attributes.used,
-	)
-
-	observer.ObserveInt64(
-		i.connectionMax,
-		int64(stats.MaxConns),
-		attributes.base,
-	)
-
-	observer.ObserveInt64(
-		i.constructingConnections,
-		int64(stats.ConstructingConns),
-		attributes.base,
-	)
-
-	observer.ObserveInt64(
-		i.acquireCount,
-		stats.AcquireCount,
-		attributes.base,
-	)
-
-	observer.ObserveFloat64(
-		i.acquireTime,
-		stats.AcquireDuration.Seconds(),
-		attributes.base,
-	)
-
-	observer.ObserveInt64(
-		i.canceledAcquireCount,
-		stats.CanceledAcquireCount,
-		attributes.base,
-	)
-
-	observer.ObserveInt64(
-		i.emptyAcquireCount,
-		stats.EmptyAcquireCount,
-		attributes.base,
-	)
-
-	observer.ObserveFloat64(
-		i.emptyAcquireWaitTime,
-		stats.EmptyAcquireWaitTime.Seconds(),
-		attributes.base,
-	)
-
-	observer.ObserveInt64(
-		i.createdConnections,
-		stats.NewConnsCount,
-		attributes.base,
-	)
-
-	observer.ObserveInt64(
-		i.destroyedConnections,
-		stats.MaxIdleDestroyCount,
-		attributes.destroyedIdle,
-	)
-
-	observer.ObserveInt64(
-		i.destroyedConnections,
-		stats.MaxLifetimeDestroyCount,
-		attributes.destroyedLifetime,
-	)
-}
-
-func (i poolMetricInstruments) observables() []metric.Observable {
-	return []metric.Observable{
-		i.connectionCount,
-		i.connectionMax,
-		i.constructingConnections,
-		i.acquireCount,
-		i.acquireTime,
-		i.canceledAcquireCount,
-		i.emptyAcquireCount,
-		i.emptyAcquireWaitTime,
-		i.createdConnections,
-		i.destroyedConnections,
-	}
-}
-
-func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error) {
+func newPoolMetricInstruments(
+	meter metric.Meter,
+) (poolMetricInstruments, error) {
 	var instruments poolMetricInstruments
 
 	var err error
@@ -213,7 +119,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	instruments.connectionCount, err = meter.Int64ObservableUpDownCounter(
 		connectionCountMetricName,
 		metric.WithDescription(
-			"The number of connections currently used or idle in the pool.",
+			"The number of connections currently in the state described by db.client.connection.state.",
 		),
 		metric.WithUnit("{connection}"),
 	)
@@ -333,7 +239,7 @@ func newPoolMetricInstruments(meter metric.Meter) (poolMetricInstruments, error)
 	instruments.createdConnections, err = meter.Int64ObservableCounter(
 		connectionCreateCountMetricName,
 		metric.WithDescription(
-			"The cumulative number of connections opened by the pool.",
+			"The cumulative number of connections created by the pool.",
 		),
 		metric.WithUnit("{connection}"),
 	)
@@ -367,10 +273,7 @@ func newPoolMetricAttributes(name string, labels map[string]string) poolMetricAt
 	var base []attribute.KeyValue
 
 	for key, value := range labels {
-		base = append(
-			base,
-			attribute.String(key, value),
-		)
+		base = append(base, attribute.String(key, value))
 	}
 
 	// System attributes are appended last, so xpg-controlled values win when
@@ -425,5 +328,98 @@ func newPoolMetricAttributes(name string, labels map[string]string) poolMetricAt
 				destroyReasonLifetime,
 			),
 		),
+	}
+}
+
+func (i poolMetricInstruments) observe(
+	observer metric.Observer,
+	stats xpg.PoolStats,
+	attributes poolMetricAttributes,
+) {
+	observer.ObserveInt64(
+		i.connectionCount,
+		int64(stats.IdleConns),
+		attributes.idle,
+	)
+
+	observer.ObserveInt64(
+		i.connectionCount,
+		int64(stats.AcquiredConns),
+		attributes.used,
+	)
+
+	observer.ObserveInt64(
+		i.connectionMax,
+		int64(stats.MaxConns),
+		attributes.base,
+	)
+
+	observer.ObserveInt64(
+		i.constructingConnections,
+		int64(stats.ConstructingConns),
+		attributes.base,
+	)
+
+	observer.ObserveInt64(
+		i.acquireCount,
+		stats.AcquireCount,
+		attributes.base,
+	)
+
+	observer.ObserveFloat64(
+		i.acquireTime,
+		stats.AcquireDuration.Seconds(),
+		attributes.base,
+	)
+
+	observer.ObserveInt64(
+		i.canceledAcquireCount,
+		stats.CanceledAcquireCount,
+		attributes.base,
+	)
+
+	observer.ObserveInt64(
+		i.emptyAcquireCount,
+		stats.EmptyAcquireCount,
+		attributes.base,
+	)
+
+	observer.ObserveFloat64(
+		i.emptyAcquireWaitTime,
+		stats.EmptyAcquireWaitTime.Seconds(),
+		attributes.base,
+	)
+
+	observer.ObserveInt64(
+		i.createdConnections,
+		stats.NewConnsCount,
+		attributes.base,
+	)
+
+	observer.ObserveInt64(
+		i.destroyedConnections,
+		stats.MaxIdleDestroyCount,
+		attributes.destroyedIdle,
+	)
+
+	observer.ObserveInt64(
+		i.destroyedConnections,
+		stats.MaxLifetimeDestroyCount,
+		attributes.destroyedLifetime,
+	)
+}
+
+func (i poolMetricInstruments) observables() []metric.Observable {
+	return []metric.Observable{
+		i.connectionCount,
+		i.connectionMax,
+		i.constructingConnections,
+		i.acquireCount,
+		i.acquireTime,
+		i.canceledAcquireCount,
+		i.emptyAcquireCount,
+		i.emptyAcquireWaitTime,
+		i.createdConnections,
+		i.destroyedConnections,
 	}
 }

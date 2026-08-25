@@ -12,16 +12,46 @@ func TestNewCustomValidatesArguments(t *testing.T) {
 
 	topology := newTestTopology(t, "shard-a")
 
-	if resolver, err := NewCustom[int](nil, func(int, *shard.Topology) (shard.ID, error) {
-		return "shard-a", nil
-	}); err == nil {
-		_ = resolver
-		t.Fatal("expected topology error")
+	validResolve := ResolveFunc[int](
+		func(int, *shard.Topology) (shard.ID, error) {
+			return "shard-a", nil
+		},
+	)
+
+	tests := []struct {
+		name      string
+		topology  *shard.Topology
+		resolve   ResolveFunc[int]
+		wantError string
+	}{
+		{
+			name:      "nil topology",
+			resolve:   validResolve,
+			wantError: "xpg/shard/resolver: topology is nil or empty",
+		},
+		{
+			name:      "nil resolve function",
+			topology:  topology,
+			wantError: "xpg/shard/resolver: custom resolve function is nil",
+		},
 	}
 
-	if resolver, err := NewCustom[int](topology, nil); err == nil {
-		_ = resolver
-		t.Fatal("expected resolve function error")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := NewCustom(
+				test.topology,
+				test.resolve,
+			)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+
+			if got := err.Error(); got != test.wantError {
+				t.Fatalf("error = %q, want %q", got, test.wantError)
+			}
+		})
 	}
 }
 

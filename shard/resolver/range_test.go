@@ -4,7 +4,6 @@ import (
 	"errors"
 	"math"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/mkbeh/xpg/shard"
@@ -15,53 +14,72 @@ func TestNewRangeValidatesArguments(t *testing.T) {
 
 	topology := newTestTopology(t, "shard-a")
 
-	if resolver, err := NewRange[int](nil, []Range[int]{{Start: 0, End: 10, ShardID: "shard-a"}}); err == nil {
-		_ = resolver
-		t.Fatal("expected topology error")
-	}
-
-	if resolver, err := NewRange[int](topology, nil); err == nil {
-		_ = resolver
-		t.Fatal("expected empty ranges error")
-	}
-
 	tests := []struct {
-		name       string
-		valueRange Range[int]
-		want       string
+		name      string
+		topology  *shard.Topology
+		ranges    []Range[int]
+		wantError string
 	}{
 		{
-			name:       "empty shard ID",
-			valueRange: Range[int]{Start: 0, End: 10},
-			want:       "shard ID must not be empty",
+			name: "nil topology",
+			ranges: []Range[int]{
+				{Start: 0, End: 10, ShardID: "shard-a"},
+			},
+			wantError: "xpg/shard/resolver: topology is nil or empty",
 		},
 		{
-			name:       "empty interval",
-			valueRange: Range[int]{Start: 10, End: 10, ShardID: "shard-a"},
-			want:       "must satisfy start < end",
+			name:      "empty ranges",
+			topology:  topology,
+			wantError: "xpg/shard/resolver: range resolver requires at least one range",
 		},
 		{
-			name:       "reversed interval",
-			valueRange: Range[int]{Start: 20, End: 10, ShardID: "shard-a"},
-			want:       "must satisfy start < end",
+			name:     "empty shard ID",
+			topology: topology,
+			ranges: []Range[int]{
+				{Start: 0, End: 10},
+			},
+			wantError: "xpg/shard/resolver: range 0: shard ID must not be empty",
 		},
 		{
-			name:       "unknown shard",
-			valueRange: Range[int]{Start: 0, End: 10, ShardID: "missing"},
-			want:       `unknown shard "missing"`,
+			name:     "empty interval",
+			topology: topology,
+			ranges: []Range[int]{
+				{Start: 10, End: 10, ShardID: "shard-a"},
+			},
+			wantError: "xpg/shard/resolver: range 0 must satisfy start < end",
+		},
+		{
+			name:     "reversed interval",
+			topology: topology,
+			ranges: []Range[int]{
+				{Start: 20, End: 10, ShardID: "shard-a"},
+			},
+			wantError: "xpg/shard/resolver: range 0 must satisfy start < end",
+		},
+		{
+			name:     "unknown shard",
+			topology: topology,
+			ranges: []Range[int]{
+				{Start: 0, End: 10, ShardID: "missing"},
+			},
+			wantError: `xpg/shard/resolver: range 0: xpg/shard: unknown shard "missing"`,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver, err := NewRange(topology, []Range[int]{test.valueRange})
+			t.Parallel()
+
+			_, err := NewRange(
+				test.topology,
+				test.ranges,
+			)
 			if err == nil {
-				_ = resolver
 				t.Fatal("expected error")
 			}
 
-			if !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %q, want substring %q", err, test.want)
+			if got := err.Error(); got != test.wantError {
+				t.Fatalf("error = %q, want %q", got, test.wantError)
 			}
 		})
 	}
@@ -72,17 +90,45 @@ func TestNewRangeRejectsNaNBoundaries(t *testing.T) {
 
 	topology := newTestTopology(t, "shard-a")
 
-	tests := []Range[float64]{
-		{Start: math.NaN(), End: 10, ShardID: "shard-a"},
-		{Start: 0, End: math.NaN(), ShardID: "shard-a"},
+	tests := []struct {
+		name       string
+		valueRange Range[float64]
+	}{
+		{
+			name: "NaN start",
+			valueRange: Range[float64]{
+				Start:   math.NaN(),
+				End:     10,
+				ShardID: "shard-a",
+			},
+		},
+		{
+			name: "NaN end",
+			valueRange: Range[float64]{
+				Start:   0,
+				End:     math.NaN(),
+				ShardID: "shard-a",
+			},
+		},
 	}
 
-	for index, valueRange := range tests {
-		resolver, err := NewRange(topology, []Range[float64]{valueRange})
-		if err == nil {
-			_ = resolver
-			t.Fatalf("range %d: expected error", index)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := NewRange(
+				topology,
+				[]Range[float64]{test.valueRange},
+			)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+
+			if got, want := err.Error(),
+				"xpg/shard/resolver: range 0 must satisfy start < end"; got != want {
+				t.Fatalf("error = %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -91,12 +137,11 @@ func TestNewRangeRejectsOverlapUsingSourceIndexes(t *testing.T) {
 
 	topology := newTestTopology(t, "shard-a", "shard-b")
 
-	resolver, err := NewRange(topology, []Range[int]{
+	_, err := NewRange(topology, []Range[int]{
 		{Start: 100, End: 200, ShardID: "shard-b"},
 		{Start: 50, End: 150, ShardID: "shard-a"},
 	})
 	if err == nil {
-		_ = resolver
 		t.Fatal("expected overlap error")
 	}
 
@@ -113,7 +158,7 @@ func TestNewRangeDoesNotModifyInputOrder(t *testing.T) {
 		{Start: 100, End: 200, ShardID: "shard-b"},
 		{Start: 0, End: 100, ShardID: "shard-a"},
 	}
-	want := append([]Range[int](nil), ranges...)
+	want := slices.Clone(ranges)
 
 	if _, err := NewRange(topology, ranges); err != nil {
 		t.Fatalf("NewRange() error = %v", err)
@@ -156,12 +201,14 @@ func TestRangeResolverHalfOpenBoundariesAndGaps(t *testing.T) {
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("Resolve(%d) error = %v, want %v", test.key, err, test.wantErr)
 			}
+
 			continue
 		}
 
 		if err != nil {
 			t.Fatalf("Resolve(%d) error = %v", test.key, err)
 		}
+
 		if got := resolved.ID(); got != test.wantID {
 			t.Fatalf("Resolve(%d).ID() = %q, want %q", test.key, got, test.wantID)
 		}
@@ -184,6 +231,7 @@ func TestRangeResolverAllowsAdjacentRanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
+
 	if got, want := resolved.ID(), shard.ID("shard-b"); got != want {
 		t.Fatalf("Resolve().ID() = %q, want %q", got, want)
 	}
@@ -205,6 +253,7 @@ func TestRangeResolverSupportsStrings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
+
 	if got, want := resolved.ID(), shard.ID("shard-b"); got != want {
 		t.Fatalf("Resolve().ID() = %q, want %q", got, want)
 	}

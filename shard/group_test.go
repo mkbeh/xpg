@@ -128,7 +128,7 @@ func TestSameShardReturnsMismatchDetails(t *testing.T) {
 	}
 }
 
-func TestGroupByShardPreservesStableOrder(t *testing.T) {
+func TestGroupByShardPreservesGroupAndKeyOrder(t *testing.T) {
 	t.Parallel()
 
 	topology := newTestTopology(t, "shard-a", "shard-b")

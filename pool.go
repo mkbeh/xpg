@@ -22,9 +22,9 @@ type Pool struct {
 	closeOnce sync.Once
 }
 
-// Open parses a DSN and creates a Pool.
-func Open(ctx context.Context, dsn string, options ...Option) (*Pool, error) {
-	config, err := pgxpool.ParseConfig(dsn)
+// Open parses a PostgreSQL connection string and creates a Pool.
+func Open(ctx context.Context, connString string, options ...Option) (*Pool, error) {
+	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("xpg: parse pool config: %w", err)
 	}
@@ -35,8 +35,7 @@ func Open(ctx context.Context, dsn string, options ...Option) (*Pool, error) {
 // New creates a Pool from config.
 //
 // Config must have been created by pgxpool.ParseConfig. New passes a defensive
-// copy to pgxpool, so subsequent changes to the original config do not affect
-// the created Pool.
+// copy to pgxpool, so subsequent changes to config do not affect the Pool.
 //
 // As with pgxpool.Config.Copy, the referenced tls.Config remains shared and
 // must not be modified after it has been used to create connections.
@@ -75,32 +74,40 @@ func New(ctx context.Context, config *pgxpool.Config, options ...Option) (*Pool,
 
 	if err := pool.registerMetrics(settings.metrics); err != nil {
 		pool.Close()
+
 		return nil, fmt.Errorf("xpg: register pool metrics: %w", err)
 	}
 
 	return pool, nil
 }
 
-// Name returns the logical pool name configured with WithName.
+// Name returns the logical pool name.
+//
+// If WithName is not configured, the name is derived from the connection host,
+// port, and database.
 func (p *Pool) Name() string {
 	return p.name
 }
 
+// Labels returns a copy of the pool labels.
 func (p *Pool) Labels() map[string]string {
 	return cloneLabels(p.labels)
 }
 
 // Raw returns the underlying pgxpool.Pool.
+//
+// The returned pool is owned by Pool and must not be closed directly.
 func (p *Pool) Raw() *pgxpool.Pool {
 	return p.pool
 }
 
+// Ping verifies connectivity to PostgreSQL.
 func (p *Pool) Ping(ctx context.Context) error {
 	return p.pool.Ping(ctx)
 }
 
-// Close closes the underlying pool and waits for acquired connections to be
-// returned. Close is safe to call multiple times.
+// Close closes the pool and waits for acquired connections to be returned.
+// Close is safe to call multiple times.
 func (p *Pool) Close() {
 	p.closeOnce.Do(func() {
 		if p.metrics != nil {
@@ -111,22 +118,27 @@ func (p *Pool) Close() {
 	})
 }
 
+// Exec executes SQL against the pool.
 func (p *Pool) Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error) {
 	return p.pool.Exec(ctx, sql, arguments...)
 }
 
+// Query executes SQL and returns the resulting rows.
 func (p *Pool) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	return p.pool.Query(ctx, sql, args...)
 }
 
+// QueryRow executes SQL that is expected to return at most one row.
 func (p *Pool) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return p.pool.QueryRow(ctx, sql, args...)
 }
 
+// SendBatch sends a batch of queries through the pool.
 func (p *Pool) SendBatch(ctx context.Context, batch *pgx.Batch) pgx.BatchResults {
 	return p.pool.SendBatch(ctx, batch)
 }
 
+// CopyFrom copies rows into the specified table.
 func (p *Pool) CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error) {
 	return p.pool.CopyFrom(ctx, tableName, columnNames, rowSrc)
 }

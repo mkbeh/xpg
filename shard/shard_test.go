@@ -1,7 +1,6 @@
 package shard
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -30,16 +29,16 @@ func TestShardZeroValue(t *testing.T) {
 		t.Fatalf("Primary() = %p, want nil", primary)
 	}
 
-	if _, err := shard.ReadPool(context.Background(), cluster.ReadPrimary); !errors.Is(err, ErrNoShard) {
+	if _, err := shard.ReadPool(t.Context(), cluster.ReadPrimary); !errors.Is(err, ErrNoShard) {
 		t.Fatalf("ReadPool() error = %v, want ErrNoShard", err)
 	}
 
-	if err := shard.InPrimaryTx(context.Background(), pgx.TxOptions{}, nil); !errors.Is(err, ErrNoShard) {
+	if err := shard.InPrimaryTx(t.Context(), pgx.TxOptions{}, nil); !errors.Is(err, ErrNoShard) {
 		t.Fatalf("InPrimaryTx() error = %v, want ErrNoShard", err)
 	}
 
 	if err := shard.InReadTx(
-		context.Background(),
+		t.Context(),
 		cluster.ReadPrimary,
 		cluster.ReadTxOptions{},
 		nil,
@@ -87,7 +86,7 @@ func TestShardDelegatesClusterMetadataAndRouting(t *testing.T) {
 		t.Fatal("Primary() did not return cluster primary")
 	}
 
-	pool, err := resolved.ReadPool(context.Background(), cluster.ReadPrimary)
+	pool, err := resolved.ReadPool(t.Context(), cluster.ReadPrimary)
 	if err != nil {
 		t.Fatalf("ReadPool() error = %v", err)
 	}

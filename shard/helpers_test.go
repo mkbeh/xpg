@@ -1,7 +1,6 @@
 package shard
 
 import (
-	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,7 +22,7 @@ func newTestCluster(t *testing.T, id ID, labels map[string]string) *cluster.Clus
 	config.MaxConns = 1
 
 	pool, err := xpg.New(
-		context.Background(),
+		t.Context(),
 		config,
 		xpg.WithName("shard."+string(id)+".primary"),
 	)

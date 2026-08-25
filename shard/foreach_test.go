@@ -3,7 +3,6 @@ package shard
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,28 +25,35 @@ func TestForEachShardValidatesArguments(t *testing.T) {
 			topology:    nil,
 			concurrency: 1,
 			fn:          func(context.Context, Shard) error { return nil },
-			wantError:   "topology is nil",
+			wantError:   "xpg/shard: topology is nil",
+		},
+		{
+			name:        "empty topology",
+			topology:    &Topology{},
+			concurrency: 1,
+			fn:          func(context.Context, Shard) error { return nil },
+			wantError:   "xpg/shard: topology is empty",
 		},
 		{
 			name:        "zero concurrency",
 			topology:    topology,
 			concurrency: 0,
 			fn:          func(context.Context, Shard) error { return nil },
-			wantError:   "concurrency must be positive",
+			wantError:   "xpg/shard: concurrency must be positive",
 		},
 		{
 			name:        "nil callback",
 			topology:    topology,
 			concurrency: 1,
 			fn:          nil,
-			wantError:   "callback is nil",
+			wantError:   "xpg/shard: callback is nil",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := test.topology.ForEachShard(
-				context.Background(),
+				t.Context(),
 				test.concurrency,
 				test.fn,
 			)
@@ -55,8 +61,8 @@ func TestForEachShardValidatesArguments(t *testing.T) {
 				t.Fatal("expected error")
 			}
 
-			if !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("error = %q, want substring %q", err, test.wantError)
+			if got := err.Error(); got != test.wantError {
+				t.Fatalf("error = %q, want %q", got, test.wantError)
 			}
 		})
 	}
@@ -68,7 +74,7 @@ func TestForEachShardPreservesRegistrationOrder(t *testing.T) {
 	topology := newTestTopology(t, "shard-c", "shard-a", "shard-b")
 
 	results, err := topology.ForEachShard(
-		context.Background(),
+		t.Context(),
 		2,
 		func(context.Context, Shard) error { return nil },
 	)
@@ -101,7 +107,7 @@ func TestForEachShardHonorsConcurrencyLimit(t *testing.T) {
 		"shard-f",
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	started := make(chan struct{}, topology.Len())
@@ -200,7 +206,7 @@ func TestForEachShardCallbackErrorsDoNotStopOtherShards(t *testing.T) {
 	var calls atomic.Int32
 
 	results, err := topology.ForEachShard(
-		context.Background(),
+		t.Context(),
 		2,
 		func(_ context.Context, current Shard) error {
 			calls.Add(1)
@@ -228,8 +234,9 @@ func TestForEachShardCallbackErrorsDoNotStopOtherShards(t *testing.T) {
 		t.Fatalf("results.Err() = %v, want wrapped sentinel", joined)
 	}
 
-	if !strings.Contains(joined.Error(), `shard "shard-b" callback`) {
-		t.Fatalf("results.Err() = %q, want shard context", joined)
+	if got, want := joined.Error(),
+		`xpg/shard: shard "shard-b": callback failed`; got != want {
+		t.Fatalf("results.Err() = %q, want %q", got, want)
 	}
 }
 
@@ -237,7 +244,7 @@ func TestForEachShardCanceledBeforeScheduling(t *testing.T) {
 	t.Parallel()
 
 	topology := newTestTopology(t, "shard-a", "shard-b", "shard-c")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	var calls atomic.Int32
@@ -269,7 +276,7 @@ func TestForEachShardCancellationSkipsCallbacksNotStarted(t *testing.T) {
 	t.Parallel()
 
 	topology := newTestTopology(t, "shard-a", "shard-b", "shard-c", "shard-d")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	started := make(chan struct{})
@@ -336,9 +343,11 @@ func TestForEachShardResultsErr(t *testing.T) {
 		t.Fatalf("Err() = %v, want both failures", err)
 	}
 
-	if got := err.Error(); !strings.Contains(got, `shard "shard-a" callback`) ||
-		!strings.Contains(got, `shard "shard-c" callback`) {
-		t.Fatalf("Err() = %q, want shard context", got)
+	want := "xpg/shard: shard \"shard-a\": first\n" +
+		"xpg/shard: shard \"shard-c\": second"
+
+	if got := err.Error(); got != want {
+		t.Fatalf("Err() = %q, want %q", got, want)
 	}
 
 	if err := (ForEachShardResults{{ShardID: "shard-a"}}).Err(); err != nil {

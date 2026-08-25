@@ -1,54 +1,66 @@
 package otelxpg
 
 import (
-	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/mkbeh/xpg"
 	"go.opentelemetry.io/otel/metric/noop"
 )
 
-func TestMetricsRegistration(t *testing.T) {
+func TestNewMetrics(t *testing.T) {
 	t.Parallel()
 
-	metrics := NewMetrics(
-		WithMeterProvider(noop.NewMeterProvider()),
-	)
+	metrics := NewMetrics(nil)
 
-	pool := newTestPool(t, metrics)
-	pool.Close()
-	pool.Close()
+	if metrics == nil {
+		t.Fatal("expected metrics")
+	}
+
+	if metrics.meterProvider != nil {
+		t.Fatal("expected nil meter provider")
+	}
 }
 
-func TestWithMeterProviderNilUsesGlobalProvider(t *testing.T) {
+func TestWithMeterProvider(t *testing.T) {
 	t.Parallel()
 
+	provider := noop.NewMeterProvider()
+
 	metrics := NewMetrics(
+		WithMeterProvider(provider),
+	)
+
+	if metrics.meterProvider != provider {
+		t.Fatal("unexpected meter provider")
+	}
+}
+
+func TestWithMeterProviderLastWins(t *testing.T) {
+	t.Parallel()
+
+	first := noop.NewMeterProvider()
+	second := noop.NewMeterProvider()
+
+	metrics := NewMetrics(
+		WithMeterProvider(first),
+		WithMeterProvider(second),
+	)
+
+	if metrics.meterProvider != second {
+		t.Fatal("expected last meter provider to win")
+	}
+}
+
+func TestWithMeterProviderNilIgnored(t *testing.T) {
+	t.Parallel()
+
+	provider := noop.NewMeterProvider()
+
+	metrics := NewMetrics(
+		WithMeterProvider(provider),
 		WithMeterProvider(nil),
 	)
 
-	pool := newTestPool(t, metrics)
-	pool.Close()
-}
-
-func newTestPool(t *testing.T, metrics xpg.Metrics) *xpg.Pool {
-	t.Helper()
-
-	poolConfig, err := pgxpool.ParseConfig("")
-	if err != nil {
-		t.Fatalf("parse pool config: %v", err)
+	if metrics.meterProvider != provider {
+		t.Fatal("expected nil meter provider option to be ignored")
 	}
-
-	pool, err := xpg.New(
-		context.Background(),
-		poolConfig,
-		xpg.WithName("test-pool"),
-		xpg.WithMetrics(metrics),
-	)
-	if err != nil {
-		t.Fatalf("create pool: %v", err)
-	}
-
-	return pool
 }

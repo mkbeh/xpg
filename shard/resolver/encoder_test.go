@@ -103,6 +103,8 @@ func TestIntegerKeyEncoders(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			encoded, err := test.got()
 			if err != nil {
 				t.Fatalf("Encode() error = %v", err)

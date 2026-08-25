@@ -10,15 +10,14 @@ import (
 
 const instrumentationName = "github.com/mkbeh/xpg/extra/otelxpg"
 
-// Metrics exports xpg statistics through OpenTelemetry.
+// Metrics exports xpg pool statistics through OpenTelemetry.
 //
-// Metrics is immutable after construction and may be reused for multiple
-// pool registrations.
+// Metrics is safe for concurrent use and reuse across multiple pools.
 type Metrics struct {
 	meterProvider metric.MeterProvider
 }
 
-// metricsRegistration owns one OpenTelemetry callback registration.
+// metricsRegistration represents one OpenTelemetry callback registration.
 type metricsRegistration struct {
 	registration metric.Registration
 	closeOnce    sync.Once
@@ -31,9 +30,7 @@ func (m *metricsRegistration) Close() {
 
 	m.closeOnce.Do(func() {
 		if err := m.registration.Unregister(); err != nil {
-			otel.Handle(
-				fmt.Errorf("otelxpg: unregister metrics: %w", err),
-			)
+			otel.Handle(fmt.Errorf("otelxpg: unregister metrics: %w", err))
 		}
 	})
 }

@@ -5,8 +5,10 @@ import (
 	"fmt"
 )
 
-// SameShard resolves the keys and verifies that they all belong to the same
-// shard. It returns the resolved shard when all keys are colocated.
+// SameShard resolves keys and verifies that they all belong to the same shard.
+//
+// It returns ErrNoShard when no keys are provided and MismatchError when a key
+// resolves to a different shard.
 func SameShard[K any](resolver Resolver[K], keys ...K) (Shard, error) {
 	if resolver == nil {
 		return Shard{}, errors.New("xpg/shard: resolver is nil")
@@ -44,15 +46,17 @@ func SameShard[K any](resolver Resolver[K], keys ...K) (Shard, error) {
 	return expected, nil
 }
 
-// Group contains input keys that resolve to one shard. Keys preserve their
-// original relative order.
+// Group contains keys that resolve to the same shard.
+// Keys preserve their original relative order.
 type Group[K any] struct {
 	Shard Shard
 	Keys  []K
 }
 
-// GroupByShard resolves every key once and returns groups in order of each
-// shard's first appearance in the input.
+// GroupByShard resolves each key once and groups keys by shard.
+//
+// Groups are returned in order of each shard's first appearance in keys.
+// Keys within each group preserve their original relative order.
 func GroupByShard[K any](resolver Resolver[K], keys []K) ([]Group[K], error) {
 	if resolver == nil {
 		return nil, errors.New("xpg/shard: resolver is nil")

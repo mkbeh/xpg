@@ -30,8 +30,8 @@ const (
 	readPolicyReplicaRequired  = "replica_required"
 )
 
-// ParsePolicy parses a ReadPolicy from its string representation.
-func ParsePolicy(value string) (ReadPolicy, error) {
+// ParseReadPolicy parses a ReadPolicy from its string representation.
+func ParseReadPolicy(value string) (ReadPolicy, error) {
 	switch value {
 	case readPolicyPrimary:
 		return ReadPrimary, nil
@@ -40,7 +40,10 @@ func ParsePolicy(value string) (ReadPolicy, error) {
 	case readPolicyReplicaRequired:
 		return ReadReplicaRequired, nil
 	default:
-		return 0, fmt.Errorf("xpg/cluster: unknown read policy %q", value)
+		return 0, fmt.Errorf(
+			"xpg/cluster: unknown read policy %q",
+			value,
+		)
 	}
 }
 
@@ -58,11 +61,10 @@ func (policy ReadPolicy) String() string {
 	}
 }
 
-// ReadPool returns a pool for a read operation according to policy.
+// ReadPool returns a pool according to policy.
 //
-// ReadReplicaPreferred falls back to the primary when no replica can be
-// selected. If the cluster has no primary, it returns ErrNoPrimary.
-// Other selector errors are returned to the caller.
+// ReadReplicaPreferred falls back to the primary only when no replica can be
+// selected. Other selector errors are returned to the caller.
 func (c *Cluster) ReadPool(ctx context.Context, policy ReadPolicy) (*xpg.Pool, error) {
 	if c == nil {
 		return nil, errors.New("xpg/cluster: cluster is nil")

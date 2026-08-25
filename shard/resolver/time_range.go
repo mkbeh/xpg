@@ -20,25 +20,16 @@ type TimeRange struct {
 	ShardID shard.ID
 }
 
-// TimeRangeResolver resolves time instants through bounded, non-overlapping
-// ranges.
+// TimeRangeResolver routes time instants through non-overlapping ranges.
 type TimeRangeResolver struct {
 	ranges []timeRangeEntry
 }
 
-type timeRangeEntry struct {
-	start time.Time
-	end   time.Time
-	shard shard.Shard
-
-	sourceIndex int
-}
-
-// NewTimeRange creates a resolver from bounded, non-overlapping half-open time
-// ranges.
+// NewTimeRange creates a resolver from non-overlapping half-open time ranges.
 //
-// Range boundaries are normalized to UTC. The caller's slice and time values
-// are not modified.
+// The supplied ranges may be unordered. NewTimeRange normalizes boundaries to
+// UTC, sorts ranges by Start, validates their overlap, and leaves the caller's
+// slice unchanged.
 func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResolver, error) {
 	if err := requireTopology(topology); err != nil {
 		return nil, err
@@ -112,9 +103,6 @@ func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResol
 }
 
 // Resolve returns the shard whose configured time range contains key.
-//
-// Resolve performs only an in-memory lookup. It does not acquire a connection
-// or execute a PostgreSQL query.
 func (resolver *TimeRangeResolver) Resolve(key time.Time) (shard.Shard, error) {
 	if resolver == nil || len(resolver.ranges) == 0 {
 		return shard.Shard{}, errors.New("xpg/shard/resolver: time range resolver is not initialized")
@@ -146,6 +134,14 @@ func (resolver *TimeRangeResolver) Resolve(key time.Time) (shard.Shard, error) {
 	return entry.shard, nil
 }
 
-func timeToUTC(t time.Time) time.Time {
-	return t.UTC()
+type timeRangeEntry struct {
+	start time.Time
+	end   time.Time
+	shard shard.Shard
+
+	sourceIndex int
+}
+
+func timeToUTC(value time.Time) time.Time {
+	return value.UTC()
 }

@@ -1,7 +1,6 @@
 package shard
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -28,8 +27,8 @@ func TestNewTopologyRejectsNilCluster(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if !strings.Contains(err.Error(), "cluster is nil") {
-		t.Fatalf("error = %q, want cluster validation error", err)
+	if got, want := err.Error(), "xpg/shard: shard 0: cluster is nil"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
 
@@ -43,8 +42,8 @@ func TestNewTopologyRejectsEmptyClusterID(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if !strings.Contains(err.Error(), "cluster ID must not be empty") {
-		t.Fatalf("error = %q, want cluster ID validation error", err)
+	if got, want := err.Error(), "xpg/shard: shard 0: cluster ID must not be empty"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
 
@@ -62,8 +61,9 @@ func TestNewTopologyRejectsDuplicateIDs(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if !strings.Contains(err.Error(), `duplicate shard ID "shard-a"`) {
-		t.Fatalf("error = %q, want duplicate shard ID error", err)
+	if got, want := err.Error(),
+		`xpg/shard: duplicate shard ID "shard-a" at indexes 0 and 1`; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
 

@@ -20,19 +20,22 @@ const (
 	rendezvousLengthSize = 4
 )
 
-// HashResolver implements rendezvous/HRW routing with SHA-256 and stable named
-// shard IDs.
+// HashResolver routes keys using rendezvous/HRW hashing with SHA-256.
+//
+// HashResolver captures the shard set when it is created. The shards remain
+// borrowed from the topology, so the resolver must not outlive it.
 type HashResolver[K any] struct {
-	shards      []shard.Shard
-	prefix      []byte
-	encoder     KeyEncoder[K]
-	maxIDLength int
+	shards           []shard.Shard
+	prefix           []byte
+	encoder          KeyEncoder[K]
+	maxShardIDLength int
 }
 
-// NewHash creates the version-1 rendezvous resolver bound to topology.
+// NewHash creates a rendezvous hash resolver bound to topology.
 //
-// Namespace is part of the persistent placement contract. Changing it changes
-// shard placement and may require data migration.
+// Namespace is an opaque non-empty string and part of the persistent placement
+// contract. Changing the namespace, key encoder, shard IDs, or placement format
+// changes shard placement and may require data migration.
 func NewHash[K any](
 	topology *shard.Topology,
 	namespace string,
@@ -55,7 +58,7 @@ func NewHash[K any](
 	}
 
 	shards := topology.Shards()
-	maxIDLength := 0
+	maxShardIDLength := 0
 
 	for _, candidate := range shards {
 		id := candidate.ID()
@@ -64,16 +67,9 @@ func NewHash[K any](
 			return nil, errors.New("xpg/shard/resolver: shard ID is too large")
 		}
 
-		// Resolve reuses one score-input buffer for all candidates, sized for
-		// the largest shard ID in the topology.
-		maxIDLength = max(maxIDLength, len(id))
+		maxShardIDLength = max(maxShardIDLength, len(id))
 	}
 
-	// Prefix is part of the persistent placement format:
-	//
-	// domain || namespace_length || namespace
-	//
-	// Changing this layout changes shard placement and requires data migration.
 	prefixSize := len(rendezvousDomain) + rendezvousLengthSize + len(namespace)
 	prefix := make([]byte, prefixSize)
 
@@ -90,13 +86,14 @@ func NewHash[K any](
 	copy(prefix[namespaceOffset:], namespace)
 
 	return &HashResolver[K]{
-		shards:      shards,
-		prefix:      prefix,
-		encoder:     encoder,
-		maxIDLength: maxIDLength,
+		shards:           shards,
+		prefix:           prefix,
+		encoder:          encoder,
+		maxShardIDLength: maxShardIDLength,
 	}, nil
 }
 
+// Resolve maps key to a shard using rendezvous hashing.
 func (resolver *HashResolver[K]) Resolve(key K) (shard.Shard, error) {
 	if resolver == nil || len(resolver.shards) == 0 || resolver.encoder == nil {
 		return shard.Shard{}, errors.New("xpg/shard/resolver: hash resolver is not initialized")
@@ -116,9 +113,17 @@ func (resolver *HashResolver[K]) Resolve(key K) (shard.Shard, error) {
 	idLengthOffset := keyOffset + len(encoded)
 	idOffset := idLengthOffset + rendezvousLengthSize
 
-	// The candidate-independent part is written once. Only the shard ID suffix
-	// is overwritten while evaluating rendezvous scores.
-	scoreInput := make([]byte, idOffset+resolver.maxIDLength)
+	// Persistent placement format:
+	//
+	// domain || namespace_length || namespace ||
+	// key_length || key || shard_id_length || shard_id
+	//
+	// The candidate-independent prefix and key are written once. Only the shard
+	// ID suffix is overwritten while evaluating candidates.
+	scoreInput := make(
+		[]byte,
+		idOffset+resolver.maxShardIDLength,
+	)
 
 	copy(scoreInput, resolver.prefix)
 
@@ -152,7 +157,9 @@ func (resolver *HashResolver[K]) Resolve(key K) (shard.Shard, error) {
 
 		// Shard ID is the deterministic tie-breaker, so placement does not
 		// depend on topology registration order when scores are equal.
-		if !hasBest || comparison > 0 || (comparison == 0 && candidateID < bestID) {
+		if !hasBest ||
+			comparison > 0 ||
+			(comparison == 0 && candidateID < bestID) {
 			selected = candidate
 			best = score
 			bestID = candidateID

@@ -52,7 +52,7 @@ func TestReplicaSelectorFunc(t *testing.T) {
 	t.Parallel()
 
 	type contextKey struct{}
-	ctx := context.WithValue(context.Background(), contextKey{}, "value")
+	ctx := context.WithValue(t.Context(), contextKey{}, "value")
 	replicas := replicaMetadata{{name: "replica"}}
 
 	selector := ReplicaSelectorFunc(func(gotCtx context.Context, gotReplicas ReplicaSet) (int, error) {
@@ -82,7 +82,7 @@ func TestReplicaSelectorFuncNil(t *testing.T) {
 
 	var selector ReplicaSelectorFunc
 
-	index, err := selector.Select(context.Background(), nil)
+	index, err := selector.Select(t.Context(), nil)
 	if index != -1 {
 		t.Fatalf("Select() index = %d, want -1", index)
 	}
@@ -101,7 +101,7 @@ func TestRoundRobinSelectorEmpty(t *testing.T) {
 
 	selector := RoundRobinSelector()
 
-	index, err := selector.Select(context.Background(), replicaMetadata(nil))
+	index, err := selector.Select(t.Context(), replicaMetadata(nil))
 	if index != -1 {
 		t.Fatalf("Select() index = %d, want -1", index)
 	}
@@ -118,7 +118,7 @@ func TestRoundRobinSelectorSingleReplica(t *testing.T) {
 	replicas := replicaMetadata{{name: "replica"}}
 
 	for range 10 {
-		index, err := selector.Select(context.Background(), replicas)
+		index, err := selector.Select(t.Context(), replicas)
 		if err != nil {
 			t.Fatalf("Select() error = %v", err)
 		}
@@ -141,7 +141,7 @@ func TestRoundRobinSelectorSequence(t *testing.T) {
 	want := []int{0, 1, 2, 0, 1, 2, 0}
 
 	for call, wantIndex := range want {
-		index, err := selector.Select(context.Background(), replicas)
+		index, err := selector.Select(t.Context(), replicas)
 		if err != nil {
 			t.Fatalf("Select() call %d error = %v", call, err)
 		}
@@ -163,6 +163,7 @@ func TestRoundRobinSelectorConcurrent(t *testing.T) {
 	selector := RoundRobinSelector()
 	replicas := make(replicaMetadata, replicaCount)
 	results := make(chan int, callCount)
+	ctx := t.Context()
 
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(callCount)
@@ -171,7 +172,7 @@ func TestRoundRobinSelectorConcurrent(t *testing.T) {
 		go func() {
 			defer waitGroup.Done()
 
-			index, err := selector.Select(context.Background(), replicas)
+			index, err := selector.Select(ctx, replicas)
 			if err != nil {
 				results <- -1
 				return

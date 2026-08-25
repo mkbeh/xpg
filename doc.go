@@ -1,2 +1,2 @@
-// Package xpg provides pgx-first infrastructure primitives for PostgreSQL.
+// Package xpg provides PostgreSQL infrastructure utilities built on pgx.
 package xpg

@@ -242,7 +242,7 @@ func TestNewCapturesReplicaMetadata(t *testing.T) {
 	}
 	t.Cleanup(cluster.Close)
 
-	resolved, err := cluster.ReadPool(context.Background(), ReadReplicaRequired)
+	resolved, err := cluster.ReadPool(t.Context(), ReadReplicaRequired)
 	if err != nil {
 		t.Fatalf("ReadPool() error = %v", err)
 	}

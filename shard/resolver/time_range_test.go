@@ -3,7 +3,6 @@ package resolver
 import (
 	"errors"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,53 +16,72 @@ func TestNewTimeRangeValidatesArguments(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
 
-	if resolver, err := NewTimeRange(nil, []TimeRange{{Start: start, End: end, ShardID: "shard-a"}}); err == nil {
-		_ = resolver
-		t.Fatal("expected topology error")
-	}
-
-	if resolver, err := NewTimeRange(topology, nil); err == nil {
-		_ = resolver
-		t.Fatal("expected empty ranges error")
-	}
-
 	tests := []struct {
-		name       string
-		valueRange TimeRange
-		want       string
+		name      string
+		topology  *shard.Topology
+		ranges    []TimeRange
+		wantError string
 	}{
 		{
-			name:       "empty shard ID",
-			valueRange: TimeRange{Start: start, End: end},
-			want:       "shard ID must not be empty",
+			name: "nil topology",
+			ranges: []TimeRange{
+				{Start: start, End: end, ShardID: "shard-a"},
+			},
+			wantError: "xpg/shard/resolver: topology is nil or empty",
 		},
 		{
-			name:       "empty interval",
-			valueRange: TimeRange{Start: start, End: start, ShardID: "shard-a"},
-			want:       "must satisfy start < end",
+			name:      "empty ranges",
+			topology:  topology,
+			wantError: "xpg/shard/resolver: time range resolver requires at least one range",
 		},
 		{
-			name:       "reversed interval",
-			valueRange: TimeRange{Start: end, End: start, ShardID: "shard-a"},
-			want:       "must satisfy start < end",
+			name:     "empty shard ID",
+			topology: topology,
+			ranges: []TimeRange{
+				{Start: start, End: end},
+			},
+			wantError: "xpg/shard/resolver: time range 0: shard ID must not be empty",
 		},
 		{
-			name:       "unknown shard",
-			valueRange: TimeRange{Start: start, End: end, ShardID: "missing"},
-			want:       `unknown shard "missing"`,
+			name:     "empty interval",
+			topology: topology,
+			ranges: []TimeRange{
+				{Start: start, End: start, ShardID: "shard-a"},
+			},
+			wantError: "xpg/shard/resolver: time range 0 must satisfy start < end",
+		},
+		{
+			name:     "reversed interval",
+			topology: topology,
+			ranges: []TimeRange{
+				{Start: end, End: start, ShardID: "shard-a"},
+			},
+			wantError: "xpg/shard/resolver: time range 0 must satisfy start < end",
+		},
+		{
+			name:     "unknown shard",
+			topology: topology,
+			ranges: []TimeRange{
+				{Start: start, End: end, ShardID: "missing"},
+			},
+			wantError: `xpg/shard/resolver: time range 0: xpg/shard: unknown shard "missing"`,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver, err := NewTimeRange(topology, []TimeRange{test.valueRange})
+			t.Parallel()
+
+			_, err := NewTimeRange(
+				test.topology,
+				test.ranges,
+			)
 			if err == nil {
-				_ = resolver
 				t.Fatal("expected error")
 			}
 
-			if !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %q, want substring %q", err, test.want)
+			if got := err.Error(); got != test.wantError {
+				t.Fatalf("error = %q, want %q", got, test.wantError)
 			}
 		})
 	}
@@ -75,12 +93,11 @@ func TestNewTimeRangeRejectsOverlapUsingSourceIndexes(t *testing.T) {
 	topology := newTestTopology(t, "shard-a", "shard-b")
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	resolver, err := NewTimeRange(topology, []TimeRange{
+	_, err := NewTimeRange(topology, []TimeRange{
 		{Start: base.Add(2 * time.Hour), End: base.Add(4 * time.Hour), ShardID: "shard-b"},
 		{Start: base.Add(time.Hour), End: base.Add(3 * time.Hour), ShardID: "shard-a"},
 	})
 	if err == nil {
-		_ = resolver
 		t.Fatal("expected overlap error")
 	}
 
@@ -99,7 +116,7 @@ func TestNewTimeRangeDoesNotModifyInput(t *testing.T) {
 		{Start: base.Add(time.Hour), End: base.Add(2 * time.Hour), ShardID: "shard-b"},
 		{Start: base, End: base.Add(time.Hour), ShardID: "shard-a"},
 	}
-	want := append([]TimeRange(nil), ranges...)
+	want := slices.Clone(ranges)
 
 	if _, err := NewTimeRange(topology, ranges); err != nil {
 		t.Fatalf("NewTimeRange() error = %v", err)
@@ -141,12 +158,14 @@ func TestTimeRangeResolverHalfOpenBoundariesAndGaps(t *testing.T) {
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("Resolve(%v) error = %v, want %v", test.key, err, test.wantErr)
 			}
+
 			continue
 		}
 
 		if err != nil {
 			t.Fatalf("Resolve(%v) error = %v", test.key, err)
 		}
+
 		if got := resolved.ID(); got != test.wantID {
 			t.Fatalf("Resolve(%v).ID() = %q, want %q", test.key, got, test.wantID)
 		}
@@ -173,6 +192,7 @@ func TestTimeRangeResolverNormalizesToUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
+
 	if got, want := resolved.ID(), shard.ID("shard-a"); got != want {
 		t.Fatalf("Resolve().ID() = %q, want %q", got, want)
 	}
@@ -195,6 +215,7 @@ func TestTimeRangeResolverAllowsAdjacentRanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
+
 	if got, want := resolved.ID(), shard.ID("shard-b"); got != want {
 		t.Fatalf("Resolve().ID() = %q, want %q", got, want)
 	}

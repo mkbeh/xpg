@@ -1,7 +1,6 @@
 package resolver
 
 import (
-	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,7 +26,7 @@ func newTestTopology(t *testing.T, ids ...shard.ID) *shard.Topology {
 		poolConfig.MaxConns = 1
 
 		pool, err := xpg.New(
-			context.Background(),
+			t.Context(),
 			poolConfig,
 			xpg.WithName("shard."+string(id)+".primary"),
 		)

@@ -10,14 +10,14 @@ import (
 
 // InTx executes fn in a transaction configured by txOptions.
 //
-// The transaction is committed when fn returns nil and rolled back when fn
-// returns an error. If fn panics, rollback is attempted before the panic is
-// propagated. The callback must not call Commit or Rollback; InTx owns
-// transaction finalization.
+// If fn returns nil, the transaction is committed; otherwise it is rolled back.
+// If fn panics, rollback is attempted before the panic is propagated. The
+// callback must not call Commit or Rollback; InTx owns transaction
+// finalization.
 //
-// The callback receives the same context and an explicit pgx.Tx. Context
-// cancellation does not automatically finalize the transaction while fn is
-// running; fn should observe ctx and return promptly.
+// The callback receives ctx unchanged. Context cancellation does not
+// automatically finalize the transaction while fn is running; fn should
+// observe ctx and return promptly.
 func (p *Pool) InTx(
 	ctx context.Context,
 	txOptions pgx.TxOptions,
@@ -42,13 +42,14 @@ func (p *Pool) InTx(
 	return nil
 }
 
-// InSavepoint executes fn in a pseudo-nested transaction implemented with a
-// PostgreSQL savepoint.
+// InSavepoint executes fn within a PostgreSQL savepoint.
 //
-// The savepoint is released when fn returns nil and rolled back when fn returns
-// an error. If fn panics, rollback is attempted before the panic is propagated.
-// The callback must not call Commit or Rollback; InSavepoint owns savepoint
+// If fn returns nil, the savepoint is released; otherwise it is rolled back.
+// If fn panics, rollback is attempted before the panic is propagated. The
+// callback must not call Commit or Rollback; InSavepoint owns savepoint
 // finalization.
+//
+// The callback receives ctx unchanged and should observe its cancellation.
 func InSavepoint(
 	ctx context.Context,
 	tx pgx.Tx,

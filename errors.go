@@ -10,14 +10,15 @@ import (
 )
 
 const (
-	sqlStateUniqueViolation      = "23505"
-	sqlStateForeignKeyViolation  = "23503"
-	sqlStateNotNullViolation     = "23502"
-	sqlStateCheckViolation       = "23514"
-	sqlStateSerializationFailure = "40001"
-	sqlStateDeadlockDetected     = "40P01"
-	sqlStateLockNotAvailable     = "55P03"
-	sqlStateQueryCanceled        = "57014"
+	sqlStateUniqueViolation          = "23505"
+	sqlStateForeignKeyViolation      = "23503"
+	sqlStateNotNullViolation         = "23502"
+	sqlStateCheckViolation           = "23514"
+	sqlStateSerializationFailure     = "40001"
+	sqlStateDeadlockDetected         = "40P01"
+	sqlStateLockNotAvailable         = "55P03"
+	sqlStateQueryCanceled            = "57014"
+	sqlStateConnectionExceptionClass = "08"
 )
 
 // SQLState returns the PostgreSQL SQLSTATE code carried by err.
@@ -29,7 +30,7 @@ func SQLState(err error) string {
 		return ""
 	}
 
-	return pgErr.Code
+	return pgErr.SQLState()
 }
 
 // IsNoRows reports whether err indicates that a query returned no rows.
@@ -106,7 +107,8 @@ func IsConnectionError(err error) bool {
 
 	state := SQLState(err)
 
-	return len(state) >= 2 && state[:2] == "08"
+	return len(state) >= 2 &&
+		state[:2] == sqlStateConnectionExceptionClass
 }
 
 // IsRetryableTransaction reports whether PostgreSQL aborted the transaction

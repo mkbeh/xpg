@@ -67,7 +67,7 @@ func TestSlogLevel(t *testing.T) {
 	}
 }
 
-func TestLoggerLog(t *testing.T) {
+func TestAdapterLog(t *testing.T) {
 	t.Parallel()
 
 	handler := &captureHandler{}
@@ -104,7 +104,7 @@ func TestLoggerLog(t *testing.T) {
 	}
 }
 
-func TestLoggerUnknownLevel(t *testing.T) {
+func TestAdapterUnknownLevel(t *testing.T) {
 	t.Parallel()
 
 	handler := &captureHandler{}

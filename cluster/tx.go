@@ -9,8 +9,8 @@ import (
 
 // ReadTxOptions configures a read-only transaction.
 //
-// AccessMode, BeginQuery, and CommitQuery are intentionally controlled by the
-// cluster.
+// AccessMode is always pgx.ReadOnly. BeginQuery and CommitQuery are not exposed
+// so callers cannot override the read-only transaction semantics.
 type ReadTxOptions struct {
 	IsoLevel       pgx.TxIsoLevel
 	DeferrableMode pgx.TxDeferrableMode
@@ -26,15 +26,18 @@ func (c *Cluster) InPrimaryTx(
 		return errors.New("xpg/cluster: cluster is nil")
 	}
 
-	if c.primary == nil {
-		return ErrNoPrimary
+	pool, err := c.resolvePrimary()
+	if err != nil {
+		return err
 	}
 
-	return c.primary.InTx(ctx, options, fn)
+	return pool.InTx(ctx, options, fn)
 }
 
 // InReadTx selects a pool according to policy and executes fn in a read-only
-// transaction on that pool.
+// transaction.
+//
+// The transaction remains read-only when policy resolves to the primary.
 func (c *Cluster) InReadTx(
 	ctx context.Context,
 	policy ReadPolicy,

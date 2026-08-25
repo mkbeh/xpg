@@ -1,15 +1,9 @@
-// Package shard provides explicit application-level routing across PostgreSQL
-// clusters.
+// Package shard provides application-level routing across PostgreSQL clusters.
 //
-// A Topology owns an ordered set of logical shards. Every Shard is backed by a
-// cluster.Cluster, and typed resolvers map application keys directly to shards.
-// Built-in resolvers support rendezvous hashing, ordered ranges, and time
-// ranges; applications may also provide custom routing logic. Resolvers borrow
-// their topology and do not own its clusters.
+// A Topology owns an immutable set of logical shards backed by cluster.Cluster
+// values. Resolvers map application keys to shards using rendezvous hashing,
+// ordered ranges, time ranges, or custom routing logic.
 //
 // The package also provides shard grouping, colocation checks, and bounded
-// fan-out.
-//
-// The package does not inspect SQL, hide shard keys in contexts, move data,
-// replicate reference tables, or provide distributed transactions.
+// parallel operations across shards.
 package shard

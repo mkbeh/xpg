@@ -15,7 +15,7 @@ const (
 
 // AdvisoryXactLock acquires an exclusive transaction-level advisory lock.
 //
-// The call waits until the lock is available or ctx is canceled. PostgreSQL
+// The call blocks until the lock is acquired or ctx is canceled. PostgreSQL
 // releases the lock automatically when tx is committed or rolled back.
 func AdvisoryXactLock(ctx context.Context, tx pgx.Tx, key int64) error {
 	if tx == nil {

@@ -16,7 +16,7 @@ func TestInPrimaryTxNilCluster(t *testing.T) {
 	called := false
 
 	err := cluster.InPrimaryTx(
-		context.Background(),
+		t.Context(),
 		pgx.TxOptions{},
 		func(context.Context, pgx.Tx) error {
 			called = true
@@ -46,7 +46,7 @@ func TestInPrimaryTxWithoutPrimary(t *testing.T) {
 
 	called := false
 	err := cluster.InPrimaryTx(
-		context.Background(),
+		t.Context(),
 		pgx.TxOptions{},
 		func(context.Context, pgx.Tx) error {
 			called = true
@@ -63,13 +63,13 @@ func TestInPrimaryTxWithoutPrimary(t *testing.T) {
 	}
 }
 
-func TestInPrimaryTxDelegatesToPool(t *testing.T) {
+func TestInPrimaryTxContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	primary := newTestPool(t, "primary", nil)
 	cluster := newTestCluster(t, Config{Primary: primary})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	called := false
@@ -82,8 +82,8 @@ func TestInPrimaryTxDelegatesToPool(t *testing.T) {
 		},
 	)
 
-	if err == nil {
-		t.Fatal("expected error")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("InPrimaryTx() error = %v, want context.Canceled", err)
 	}
 
 	if called {
@@ -99,7 +99,7 @@ func TestInReadTxRoutingError(t *testing.T) {
 
 	called := false
 	err := cluster.InReadTx(
-		context.Background(),
+		t.Context(),
 		ReadReplicaRequired,
 		ReadTxOptions{},
 		func(context.Context, pgx.Tx) error {
@@ -117,7 +117,7 @@ func TestInReadTxRoutingError(t *testing.T) {
 	}
 }
 
-func TestInReadTxDelegatesToResolvedPool(t *testing.T) {
+func TestInReadTxContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	replica := newTestPool(t, "replica", nil)
@@ -125,7 +125,7 @@ func TestInReadTxDelegatesToResolvedPool(t *testing.T) {
 		Replicas: []*xpg.Pool{replica},
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	called := false
@@ -142,8 +142,8 @@ func TestInReadTxDelegatesToResolvedPool(t *testing.T) {
 		},
 	)
 
-	if err == nil {
-		t.Fatal("expected error")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("InReadTx() error = %v, want context.Canceled", err)
 	}
 
 	if called {

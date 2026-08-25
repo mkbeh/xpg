@@ -3,13 +3,13 @@ package cluster
 import (
 	"context"
 	"errors"
-	"strings"
+	"fmt"
 	"testing"
 
 	"github.com/mkbeh/xpg"
 )
 
-func TestParsePolicy(t *testing.T) {
+func TestParseReadPolicy(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -25,22 +25,22 @@ func TestParsePolicy(t *testing.T) {
 		t.Run(test.value, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := ParsePolicy(test.value)
+			got, err := ParseReadPolicy(test.value)
 			if err != nil {
-				t.Fatalf("ParsePolicy() error = %v", err)
+				t.Fatalf("ParseReadPolicy() error = %v", err)
 			}
 
 			if got != test.want {
-				t.Fatalf("ParsePolicy(%q) = %v, want %v", test.value, got, test.want)
+				t.Fatalf("ParseReadPolicy(%q) = %v, want %v", test.value, got, test.want)
 			}
 		})
 	}
 }
 
-func TestParsePolicyRejectsUnknown(t *testing.T) {
+func TestParseReadPolicyRejectsUnknown(t *testing.T) {
 	t.Parallel()
 
-	_, err := ParsePolicy("nearest")
+	_, err := ParseReadPolicy("nearest")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -75,7 +75,7 @@ func TestReadPoolNilCluster(t *testing.T) {
 
 	var cluster *Cluster
 
-	pool, err := cluster.ReadPool(context.Background(), ReadPrimary)
+	pool, err := cluster.ReadPool(t.Context(), ReadPrimary)
 	if pool != nil {
 		t.Fatalf("ReadPool() pool = %p, want nil", pool)
 	}
@@ -95,7 +95,7 @@ func TestReadPoolPrimary(t *testing.T) {
 	primary := newTestPool(t, "primary", nil)
 	cluster := newTestCluster(t, Config{Primary: primary})
 
-	got, err := cluster.ReadPool(context.Background(), ReadPrimary)
+	got, err := cluster.ReadPool(t.Context(), ReadPrimary)
 	if err != nil {
 		t.Fatalf("ReadPool() error = %v", err)
 	}
@@ -113,7 +113,7 @@ func TestReadPoolPrimaryWithoutPrimary(t *testing.T) {
 		Replicas: []*xpg.Pool{replica},
 	})
 
-	pool, err := cluster.ReadPool(context.Background(), ReadPrimary)
+	pool, err := cluster.ReadPool(t.Context(), ReadPrimary)
 	if pool != nil {
 		t.Fatalf("ReadPool() pool = %p, want nil", pool)
 	}
@@ -133,7 +133,7 @@ func TestReadPoolReplicaPreferredUsesReplica(t *testing.T) {
 		Replicas: []*xpg.Pool{replica},
 	})
 
-	got, err := cluster.ReadPool(context.Background(), ReadReplicaPreferred)
+	got, err := cluster.ReadPool(t.Context(), ReadReplicaPreferred)
 	if err != nil {
 		t.Fatalf("ReadPool() error = %v", err)
 	}
@@ -149,7 +149,7 @@ func TestReadPoolReplicaPreferredFallsBackWithoutReplicas(t *testing.T) {
 	primary := newTestPool(t, "primary", nil)
 	cluster := newTestCluster(t, Config{Primary: primary})
 
-	got, err := cluster.ReadPool(context.Background(), ReadReplicaPreferred)
+	got, err := cluster.ReadPool(t.Context(), ReadReplicaPreferred)
 	if err != nil {
 		t.Fatalf("ReadPool() error = %v", err)
 	}
@@ -174,7 +174,7 @@ func TestReadPoolReplicaPreferredFallsBackOnErrNoReplica(t *testing.T) {
 		Selector: selector,
 	})
 
-	got, err := cluster.ReadPool(context.Background(), ReadReplicaPreferred)
+	got, err := cluster.ReadPool(t.Context(), ReadReplicaPreferred)
 	if err != nil {
 		t.Fatalf("ReadPool() error = %v", err)
 	}
@@ -200,7 +200,7 @@ func TestReadPoolReplicaPreferredDoesNotFallbackOnSelectorError(t *testing.T) {
 		Selector: selector,
 	})
 
-	pool, err := cluster.ReadPool(context.Background(), ReadReplicaPreferred)
+	pool, err := cluster.ReadPool(t.Context(), ReadReplicaPreferred)
 	if pool != nil {
 		t.Fatalf("ReadPool() pool = %p, want nil", pool)
 	}
@@ -223,7 +223,7 @@ func TestReadPoolReplicaPreferredWithoutPrimary(t *testing.T) {
 		Selector: selector,
 	})
 
-	pool, err := cluster.ReadPool(context.Background(), ReadReplicaPreferred)
+	pool, err := cluster.ReadPool(t.Context(), ReadReplicaPreferred)
 	if pool != nil {
 		t.Fatalf("ReadPool() pool = %p, want nil", pool)
 	}
@@ -241,7 +241,7 @@ func TestReadPoolReplicaRequired(t *testing.T) {
 		Replicas: []*xpg.Pool{replica},
 	})
 
-	got, err := cluster.ReadPool(context.Background(), ReadReplicaRequired)
+	got, err := cluster.ReadPool(t.Context(), ReadReplicaRequired)
 	if err != nil {
 		t.Fatalf("ReadPool() error = %v", err)
 	}
@@ -257,7 +257,7 @@ func TestReadPoolReplicaRequiredWithoutReplicas(t *testing.T) {
 	primary := newTestPool(t, "primary", nil)
 	cluster := newTestCluster(t, Config{Primary: primary})
 
-	pool, err := cluster.ReadPool(context.Background(), ReadReplicaRequired)
+	pool, err := cluster.ReadPool(t.Context(), ReadReplicaRequired)
 	if pool != nil {
 		t.Fatalf("ReadPool() pool = %p, want nil", pool)
 	}
@@ -284,7 +284,7 @@ func TestReadPoolDefaultSelectorRoundRobin(t *testing.T) {
 	}
 
 	for call, wantPool := range want {
-		got, err := cluster.ReadPool(context.Background(), ReadReplicaRequired)
+		got, err := cluster.ReadPool(t.Context(), ReadReplicaRequired)
 		if err != nil {
 			t.Fatalf("ReadPool() call %d error = %v", call, err)
 		}
@@ -320,7 +320,7 @@ func TestReadPoolRejectsSelectorIndex(t *testing.T) {
 				Selector: selector,
 			})
 
-			pool, err := cluster.ReadPool(context.Background(), ReadReplicaRequired)
+			pool, err := cluster.ReadPool(t.Context(), ReadReplicaRequired)
 			if pool != nil {
 				t.Fatalf("ReadPool() pool = %p, want nil", pool)
 			}
@@ -329,8 +329,13 @@ func TestReadPoolRejectsSelectorIndex(t *testing.T) {
 				t.Fatal("expected error")
 			}
 
-			if !strings.Contains(err.Error(), "replica selector returned invalid index") {
-				t.Fatalf("error = %q, want invalid replica index error", err)
+			want := fmt.Sprintf(
+				"xpg/cluster: replica selector returned invalid index %d for 1 replicas",
+				test.index,
+			)
+
+			if got := err.Error(); got != want {
+				t.Fatalf("error = %q, want %q", got, want)
 			}
 		})
 	}
@@ -350,7 +355,7 @@ func TestReadPoolPreservesSelectorError(t *testing.T) {
 		Selector: selector,
 	})
 
-	pool, err := cluster.ReadPool(context.Background(), ReadReplicaRequired)
+	pool, err := cluster.ReadPool(t.Context(), ReadReplicaRequired)
 	if pool != nil {
 		t.Fatalf("ReadPool() pool = %p, want nil", pool)
 	}
@@ -359,8 +364,8 @@ func TestReadPoolPreservesSelectorError(t *testing.T) {
 		t.Fatalf("ReadPool() error = %v, want wrapped selector error", err)
 	}
 
-	if !strings.Contains(err.Error(), "xpg/cluster: select replica") {
-		t.Fatalf("error = %q, want selector context", err)
+	if got, want := err.Error(), "xpg/cluster: select replica: boom"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
 
@@ -370,7 +375,7 @@ func TestReadPoolRejectsUnsupportedPolicy(t *testing.T) {
 	primary := newTestPool(t, "primary", nil)
 	cluster := newTestCluster(t, Config{Primary: primary})
 
-	pool, err := cluster.ReadPool(context.Background(), ReadPolicy(255))
+	pool, err := cluster.ReadPool(t.Context(), ReadPolicy(255))
 	if pool != nil {
 		t.Fatalf("ReadPool() pool = %p, want nil", pool)
 	}

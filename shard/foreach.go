@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// ForEachShardResult contains the result of one shard callback invocation.
+// ForEachShardResult contains the result associated with one shard.
 type ForEachShardResult struct {
 	ShardID ID
 	Err     error
@@ -28,7 +28,7 @@ func (results ForEachShardResults) Err() error {
 		errs = append(
 			errs,
 			fmt.Errorf(
-				"xpg/shard: shard %q callback: %w",
+				"xpg/shard: shard %q: %w",
 				result.ShardID,
 				result.Err,
 			),
@@ -38,19 +38,29 @@ func (results ForEachShardResults) Err() error {
 	return errors.Join(errs...)
 }
 
-// ForEachShard invokes fn for each shard with at most concurrency callbacks
-// running at once. Results are returned in topology registration order.
+// ForEachShard invokes fn across the topology with at most concurrency
+// callbacks running at once. Results are returned in topology registration
+// order; callback execution order is not guaranteed.
+//
+// Callback failures and context cancellation are stored in the corresponding
+// results and can be joined with ForEachShardResults.Err. The returned error is
+// reserved for invalid invocation arguments.
 //
 // Once context cancellation is observed, callbacks that have not started are
 // skipped and their results contain ctx.Err(). Callbacks already running are
-// responsible for observing ctx.
+// responsible for observing ctx. ForEachShard waits for all started callbacks
+// to finish before returning.
 func (t *Topology) ForEachShard(
 	ctx context.Context,
 	concurrency int,
 	fn func(context.Context, Shard) error,
 ) (ForEachShardResults, error) {
-	if t == nil || len(t.shards) == 0 {
+	if t == nil {
 		return nil, errors.New("xpg/shard: topology is nil")
+	}
+
+	if len(t.shards) == 0 {
+		return nil, errors.New("xpg/shard: topology is empty")
 	}
 
 	if concurrency <= 0 {

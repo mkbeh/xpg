@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,7 +28,7 @@ func newTestPool(t *testing.T, name string, labels map[string]string) *xpg.Pool 
 		options = append(options, xpg.WithLabels(labels))
 	}
 
-	pool, err := xpg.New(context.Background(), config, options...)
+	pool, err := xpg.New(t.Context(), config, options...)
 	if err != nil {
 		t.Fatalf("xpg.New() error = %v", err)
 	}

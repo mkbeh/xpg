@@ -3,6 +3,8 @@ package xpg
 import "time"
 
 // PoolStats is a detached point-in-time snapshot of connection pool statistics.
+//
+// Counter fields are cumulative for the lifetime of the pool.
 type PoolStats struct {
 	// Current state.
 
@@ -45,15 +47,15 @@ type PoolStats struct {
 
 	// Connection lifecycle.
 
-	// NewConnsCount is the cumulative number of connections opened by the pool.
+	// NewConnsCount is the cumulative number of connections created by the pool.
 	NewConnsCount int64
 
-	// MaxIdleDestroyCount is the cumulative number of connections closed after
-	// exceeding MaxConnIdleTime.
+	// MaxIdleDestroyCount is the cumulative number of connections closed because
+	// they exceeded MaxConnIdleTime.
 	MaxIdleDestroyCount int64
 
 	// MaxLifetimeDestroyCount is the cumulative number of connections closed
-	// after exceeding MaxConnLifetime.
+	// because they exceeded MaxConnLifetime.
 	MaxLifetimeDestroyCount int64
 }
 
