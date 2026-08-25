@@ -20,24 +20,53 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
+  modules:
+    name: Discover modules
+    runs-on: ubuntu-latest
+
+    outputs:
+      modules: ${{ steps.modules.outputs.modules }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Discover Go modules
+        id: modules
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          modules="$(
+            {
+              printf '.\n'
+
+              find ./extra ./examples \
+                -name go.mod \
+                -type f \
+                -print |
+                while IFS= read -r mod; do
+                  dirname "${mod#./}"
+                done
+            } |
+              sort |
+              jq -R -s -c 'split("\n")[:-1]'
+          )"
+
+          echo "modules=${modules}" >> "${GITHUB_OUTPUT}"
+
   lint:
     name: Lint (${{ matrix.module }})
+    needs:
+      - modules
+
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        module:
-          - .
-          - extra/otelxpg
-          - extra/slogxpg
-          - examples/advisory
-          - examples/basic
-          - examples/cluster
-          - examples/otel
-          - examples/shard
-          - examples/transactions
+        module: ${{ fromJSON(needs.modules.outputs.modules) }}
 
     steps:
       - name: Check out repository
