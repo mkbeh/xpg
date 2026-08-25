@@ -1,53 +1,34 @@
 # Basic pool usage
 
-This example opens an `xpg.Pool`, checks PostgreSQL connectivity, writes two rows, and reads them back with the common
-query methods exposed by the pool.
+This example shows how to use `xpg.Pool` for common PostgreSQL operations:
 
-**This example demonstrates:**
-
-* Creating and closing an `xpg.Pool`
-* Explicitly checking connectivity with `Pool.Ping`
-* Executing a statement with `Pool.Exec`
-* Reading one row with `Pool.QueryRow`
-* Iterating over rows returned by `Pool.Query`
-* Using `Pool.Name` as logical pool metadata
-
-## Configuration
-
-The example uses the following connection string by default:
-
-```text
-postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-```
-
-Set `XPG_DATABASE_URL` to use another PostgreSQL instance:
-
-```shell
-export XPG_DATABASE_URL='postgres://user:password@localhost:5432/database?sslmode=disable'
-```
+* Create a named PostgreSQL connection pool and verify connectivity
+* Execute a write and read a single record back
+* Query and iterate over multiple rows
 
 ## Local setup
 
-Start PostgreSQL and Adminer from the repository root:
+From this directory, start PostgreSQL and Adminer:
 
 ```shell
-docker compose -f examples/docker-compose.yml --profile tools up -d
+docker compose up -d
 ```
 
-Or from this example directory:
+Apply the example schema:
 
 ```shell
-docker compose -f ../docker-compose.yml --profile tools up -d
+psql 'postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' \
+  < sql/schema.sql
 ```
 
-Services are available at:
+The services are available at:
 
 ```text
 PostgreSQL: localhost:5432
 Adminer:    http://localhost:8080
 ```
 
-Sign in to Adminer with:
+To inspect the example data in Adminer, sign in with:
 
 ```text
 System:   PostgreSQL
@@ -55,6 +36,20 @@ Server:   postgres
 Username: postgres
 Password: postgres
 Database: postgres
+```
+
+## Configuration
+
+By default, the example connects to:
+
+```text
+postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+```
+
+To use another PostgreSQL instance, set `XPG_DATABASE_URL`:
+
+```shell
+export XPG_DATABASE_URL='postgres://user:password@localhost:5432/database?sslmode=disable'
 ```
 
 ## Run
@@ -75,20 +70,29 @@ go run ./examples/basic
 
 ```text
 pool: basic-example
-inserted users: 2
+upserted users: 2
 selected user: 1 Alice <alice@example.com> active=true
 active users:
 - 1 Alice <alice@example.com>
-- 2 Bob <bob@example.com>
 ```
 
-The embedded `setup.sql` file recreates the `xpg_basic_example` schema before each run. The resulting data remains in
-PostgreSQL so it can be inspected in Adminer.
+## Cleanup
 
-## Stop services
+To remove the example schema and data:
 
 ```shell
-docker compose -f examples/docker-compose.yml down
+psql 'postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' \
+  -c 'DROP SCHEMA IF EXISTS xpg_basic_example CASCADE;'
 ```
 
-Add `-v` to remove the PostgreSQL volume as well.
+Stop the local services:
+
+```shell
+docker compose down
+```
+
+To also remove the PostgreSQL data volume:
+
+```shell
+docker compose down -v
+```
