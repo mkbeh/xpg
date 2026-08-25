@@ -1,59 +1,37 @@
 # Transaction advisory locks
 
-This example coordinates concurrent workers with PostgreSQL transaction-level advisory locks. The first worker acquires
-an advisory lock and holds it until its transaction commits. A second worker uses the non-blocking try variant and
-cannot
-enter the protected section while the lock is held. After the first transaction commits, a third worker acquires the
-same
-lock successfully.
+This example shows how transaction-level advisory locks protect a shared operation across concurrent workers:
 
-**This example demonstrates:**
+* Acquire a lock for the lifetime of a transaction
+* Check the same lock without blocking
+* Release the lock automatically when the transaction completes
 
-* Acquiring a transaction-level lock with `xpg.AdvisoryXactLock`
-* Trying to acquire a lock without waiting with `xpg.TryAdvisoryXactLock`
-* Holding a lock for the lifetime of an explicit `pgx.Tx`
-* Releasing a transaction-level lock automatically on commit or rollback
-* Coordinating concurrent database work without `pg_sleep`
+Worker A holds the lock while its transaction is open. Worker B cannot enter the protected section, and worker C
+acquires the lock after worker A commits.
 
-## Configuration
+## Local setup
 
-The example uses the following connection string by default:
+From this directory, start PostgreSQL and Adminer:
+
+```shell
+docker compose up -d
+```
+
+Apply the example schema:
+
+```shell
+psql 'postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' \
+  < sql/schema.sql
+```
+
+The services are available at:
 
 ```text
-postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+PostgreSQL: localhost:5432
+Adminer:    http://localhost:8080
 ```
 
-Set `XPG_DATABASE_URL` to use another PostgreSQL instance:
-
-```shell
-export XPG_DATABASE_URL='postgres://user:password@localhost:5432/database?sslmode=disable'
-```
-
-> [!NOTE]
-> The example runs two transactions concurrently, so the pool must allow at least two connections. The default pgxpool
-> configuration satisfies this requirement.
-
-## Local PostgreSQL setup
-
-From the repository root, start PostgreSQL and Adminer:
-
-```shell
-docker compose -f examples/docker-compose.yml --profile tools up -d
-```
-
-Or from this directory:
-
-```shell
-docker compose -f ../docker-compose.yml --profile tools up -d
-```
-
-Adminer is available at:
-
-```text
-http://localhost:8080
-```
-
-Sign in to Adminer with:
+To inspect the example data in Adminer, sign in with:
 
 ```text
 System:   PostgreSQL
@@ -63,9 +41,24 @@ Password: postgres
 Database: postgres
 ```
 
-> [!IMPORTANT]
-> Use `postgres`, not `localhost`, in the **Server** field. Adminer connects through the Docker Compose network, where
-> PostgreSQL is available by its service name.
+## Configuration
+
+By default, the example connects to:
+
+```text
+postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+```
+
+To use another PostgreSQL instance, set `XPG_DATABASE_URL`:
+
+```shell
+export XPG_DATABASE_URL='postgres://user:password@localhost:5432/database?sslmode=disable'
+```
+
+The target database must contain the schema from `sql/schema.sql`.
+
+> [!NOTE]
+> The example runs two transactions concurrently, so the pool must allow at least two connections.
 
 ## Run
 
@@ -81,19 +74,6 @@ Or from the repository root:
 go run ./examples/advisory
 ```
 
-## Flow
-
-This example is easier to follow as a sequence:
-
-```text
-1. Reset the example state
-2. Worker A acquires the advisory lock
-3. Worker B tries the same lock without waiting
-4. Worker A commits and releases the lock
-5. Worker C acquires the released lock
-6. Read the committed job runs
-```
-
 ## Expected output
 
 ```text
@@ -106,20 +86,26 @@ recorded job runs:
 - worker-c (lock key: 2026)
 ```
 
-> [!IMPORTANT]
-> Advisory lock keys are application-defined `int64` values. Use a stable key mapping and keep the protected transaction
-> short because it holds both the lock and a pool connection until commit or rollback.
+Transaction-level advisory locks are released automatically on commit or rollback. Keep the protected transaction short
+because it holds both the lock and a pool connection.
 
-## Stop services
+## Cleanup
 
-From the repository root:
+To remove the example schema and data:
 
 ```shell
-docker compose -f examples/docker-compose.yml --profile tools down --remove-orphans -v
+psql 'postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable' \
+  -c 'DROP SCHEMA IF EXISTS xpg_advisory_example CASCADE;'
 ```
 
-Or from this directory:
+Stop the local services:
 
 ```shell
-docker compose -f ../docker-compose.yml --profile tools down --remove-orphans -v
+docker compose down
+```
+
+To also remove the PostgreSQL data volume:
+
+```shell
+docker compose down -v
 ```

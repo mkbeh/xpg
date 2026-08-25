@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"log"
@@ -16,9 +15,6 @@ const (
 	defaultDatabaseURL = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 	jobLockKey         = int64(2026)
 )
-
-//go:embed setup.sql
-var setupSQL string
 
 type jobRun struct {
 	Worker  string
@@ -38,16 +34,12 @@ func run(ctx context.Context) error {
 		xpg.WithName("advisory-example"),
 	)
 	if err != nil {
-		return fmt.Errorf("create pool: %w", err)
+		return fmt.Errorf("open pool: %w", err)
 	}
 	defer pool.Close()
 
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("ping PostgreSQL: %w", err)
-	}
-
-	if err := prepareExample(ctx, pool); err != nil {
-		return fmt.Errorf("prepare example: %w", err)
 	}
 
 	lockAcquired := make(chan struct{})
@@ -78,13 +70,7 @@ func run(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	workerBAcquired, workerBErr := tryRunJob(
-		ctx,
-		pool,
-		"worker-b",
-		jobLockKey,
-	)
-	fmt.Printf("worker-b acquired the lock: %t\n", workerBAcquired)
+	workerBAcquired, workerBErr := tryRunJob(ctx, pool, "worker-b", jobLockKey)
 
 	close(releaseLock)
 	holderErr := <-holderDone
@@ -101,14 +87,10 @@ func run(ctx context.Context) error {
 		return errors.New("worker-b acquired a lock that should still be held")
 	}
 
+	fmt.Printf("worker-b acquired the lock: %t\n", workerBAcquired)
 	fmt.Println("worker-a committed and released the lock")
 
-	workerCAcquired, err := tryRunJob(
-		ctx,
-		pool,
-		"worker-c",
-		jobLockKey,
-	)
+	workerCAcquired, err := tryRunJob(ctx, pool, "worker-c", jobLockKey)
 	if err != nil {
 		return fmt.Errorf("worker-c: %w", err)
 	}
@@ -127,22 +109,6 @@ func run(ctx context.Context) error {
 	fmt.Println("recorded job runs:")
 	for _, current := range runs {
 		fmt.Printf("- %s (lock key: %d)\n", current.Worker, current.LockKey)
-	}
-
-	return nil
-}
-
-func prepareExample(
-	ctx context.Context,
-	pool *xpg.Pool,
-) error {
-	_, err := pool.Exec(
-		ctx,
-		setupSQL,
-		pgx.QueryExecModeSimpleProtocol,
-	)
-	if err != nil {
-		return fmt.Errorf("execute setup SQL: %w", err)
 	}
 
 	return nil
@@ -195,12 +161,8 @@ func tryRunJob(
 			var err error
 
 			acquired, err = xpg.TryAdvisoryXactLock(ctx, tx, lockKey)
-			if err != nil {
+			if err != nil || !acquired {
 				return err
-			}
-
-			if !acquired {
-				return nil
 			}
 
 			if err := recordJobRun(ctx, tx, worker, lockKey); err != nil {
@@ -226,7 +188,7 @@ func recordJobRun(
 	_, err := tx.Exec(
 		ctx,
 		`INSERT INTO xpg_advisory_example.job_runs (worker, lock_key)
-		VALUES ($1, $2)`,
+		 VALUES ($1, $2)`,
 		worker,
 		lockKey,
 	)
@@ -234,10 +196,7 @@ func recordJobRun(
 	return err
 }
 
-func loadJobRuns(
-	ctx context.Context,
-	pool *xpg.Pool,
-) ([]jobRun, error) {
+func loadJobRuns(ctx context.Context, pool *xpg.Pool) ([]jobRun, error) {
 	rows, err := pool.Query(
 		ctx,
 		`SELECT worker, lock_key
