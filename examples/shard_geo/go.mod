@@ -1,4 +1,4 @@
-module github.com/mkbeh/xpg/examples/shard_geo
+module shard_geo
 
 go 1.27
 

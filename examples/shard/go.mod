@@ -1,4 +1,4 @@
-module github.com/mkbeh/xpg/examples/shard
+module shard
 
 go 1.27
 

@@ -72,7 +72,15 @@ done < <(
   } |
   while IFS= read -r -d '' mod; do
     awk '
-      $1 ~ /^github\.com\/mkbeh\/xpg(\/.*)?$/ && $2 ~ /^v[0-9]/ {
+      $1 == "require" &&
+      $2 ~ /^github\.com\/mkbeh\/xpg(\/.*)?$/ &&
+      $3 ~ /^v[0-9]/ {
+        print $2, $3
+        next
+      }
+
+      $1 ~ /^github\.com\/mkbeh\/xpg(\/.*)?$/ &&
+      $2 ~ /^v[0-9]/ {
         print $1, $2
       }
     ' "${mod}"

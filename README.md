@@ -29,7 +29,7 @@ connection management, routing, and common production workflows.
 * **Primary/Replica Routing:** Explicit read policies, replica selection, primary fallback, and read-only transactions
   across PostgreSQL nodes.
 * **Application-Level Sharding:** Hash, range, time-based, and custom routing with colocation checks, key grouping, and
-  bounded concurrent fan-out.
+  bounded parallel operations across shards.
 * **Observability:** Structured logging, tracing, pool statistics, and optional OpenTelemetry metrics.
 
 ## Installation
