@@ -23,26 +23,18 @@ func newOTelResource(ctx context.Context) (*resource.Resource, error) {
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"create OpenTelemetry resource: %w",
-			err,
-		)
+		return nil, fmt.Errorf("create OpenTelemetry resource: %w", err)
 	}
 
 	return res, nil
 }
 
-func newTracerProvider(
-	resource *resource.Resource,
-) (*sdktrace.TracerProvider, error) {
+func newTracerProvider(resource *resource.Resource) (*sdktrace.TracerProvider, error) {
 	exporter, err := stdouttrace.New(
 		stdouttrace.WithPrettyPrint(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"create stdout trace exporter: %w",
-			err,
-		)
+		return nil, fmt.Errorf("create stdout trace exporter: %w", err)
 	}
 
 	tracerProvider := sdktrace.NewTracerProvider(

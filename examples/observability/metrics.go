@@ -11,9 +11,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-func newMeterProvider(
-	resource *resource.Resource,
-) (*sdkmetric.MeterProvider, http.Handler, error) {
+func newMeterProvider(resource *resource.Resource) (*sdkmetric.MeterProvider, http.Handler, error) {
 	registry := promclient.NewRegistry()
 
 	exporter, err := otelprom.New(
@@ -21,10 +19,7 @@ func newMeterProvider(
 		otelprom.WithoutScopeInfo(),
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"create Prometheus exporter: %w",
-			err,
-		)
+		return nil, nil, fmt.Errorf("create Prometheus exporter: %w", err)
 	}
 
 	meterProvider := sdkmetric.NewMeterProvider(

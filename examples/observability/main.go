@@ -193,10 +193,7 @@ func serveHTTP(ctx context.Context, server *http.Server) error {
 	return nil
 }
 
-func loadHandler(
-	pool *xpg.Pool,
-	tracer trace.Tracer,
-) http.HandlerFunc {
+func loadHandler(pool *xpg.Pool, tracer trace.Tracer) http.HandlerFunc {
 	return func(w http.ResponseWriter, request *http.Request) {
 		ctx, span := tracer.Start(
 			request.Context(),
