@@ -5,14 +5,20 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/mkbeh/xpg/shard"
 	"github.com/mkbeh/xpg/shard/resolver"
 )
 
 const (
-	userIDRangeStart uint64 = 0
-	userIDBoundary   uint64 = 100
-	userIDRangeEnd   uint64 = 200
+	shardARangeStart uint64 = 0
+	shardBoundary    uint64 = 100
+	shardBRangeEnd   uint64 = 200
 )
+
+type user struct {
+	ID   uint64
+	Name string
+}
 
 func main() {
 	if err := run(context.Background()); err != nil {
@@ -31,13 +37,13 @@ func run(ctx context.Context) error {
 		topology,
 		[]resolver.Range[uint64]{
 			{
-				Start:   userIDRangeStart,
-				End:     userIDBoundary,
+				Start:   shardARangeStart,
+				End:     shardBoundary,
 				ShardID: shardAID,
 			},
 			{
-				Start:   userIDBoundary,
-				End:     userIDRangeEnd,
+				Start:   shardBoundary,
+				End:     shardBRangeEnd,
 				ShardID: shardBID,
 			},
 		},
@@ -46,20 +52,61 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("create user resolver: %w", err)
 	}
 
-	if err := showRangeRouting(ctx, userResolver); err != nil {
-		return err
+	users := []user{
+		{ID: 42, Name: "alice"},
+		{ID: 142, Name: "bob"},
 	}
 
-	if err := showGrouping(userResolver); err != nil {
-		return err
+	fmt.Println("range routing:")
+
+	for _, current := range users {
+		resolved, err := userResolver.Resolve(current.ID)
+		if err != nil {
+			return fmt.Errorf("resolve user %d: %w", current.ID, err)
+		}
+
+		primary := resolved.Primary()
+		if primary == nil {
+			return fmt.Errorf("shard %q has no primary", resolved.ID())
+		}
+
+		if _, err := primary.Exec(
+			ctx,
+			`INSERT INTO xpg_shard_example.users (id, name)
+			 VALUES ($1, $2)
+			 ON CONFLICT (id) DO UPDATE
+			 SET name = EXCLUDED.name`,
+			current.ID,
+			current.Name,
+		); err != nil {
+			return fmt.Errorf("write user %d: %w", current.ID, err)
+		}
+
+		fmt.Printf(
+			"- user_id=%d shard=%s pool=%s\n",
+			current.ID,
+			resolved.ID(),
+			primary.Name(),
+		)
 	}
 
-	if err := showReplicaRead(ctx, userResolver, shardBUserID); err != nil {
-		return err
+	groups, err := shard.GroupByShard(
+		userResolver,
+		[]uint64{142, 42, 143, 43},
+	)
+	if err != nil {
+		return fmt.Errorf("group user IDs: %w", err)
 	}
 
-	if err := showReferenceTables(ctx, topology); err != nil {
-		return err
+	fmt.Println()
+	fmt.Println("grouping:")
+
+	for _, group := range groups {
+		fmt.Printf(
+			"- shard=%s user_ids=%v\n",
+			group.Shard.ID(),
+			group.Keys,
+		)
 	}
 
 	return nil
