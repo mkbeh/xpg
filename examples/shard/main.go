@@ -33,6 +33,9 @@ func run(ctx context.Context) error {
 	}
 	defer topology.Close()
 
+	// A resolver describes how one dataset is distributed across the topology.
+	// NewRange resolves shard IDs once and stores the resulting Shard handles in
+	// an immutable routing table used by subsequent lookups.
 	userResolver, err := resolver.NewRange(
 		topology,
 		[]resolver.Range[uint64]{
@@ -60,14 +63,17 @@ func run(ctx context.Context) error {
 	fmt.Println("range routing:")
 
 	for _, current := range users {
-		resolved, err := userResolver.Resolve(current.ID)
+		targetShard, err := userResolver.Resolve(current.ID)
 		if err != nil {
 			return fmt.Errorf("resolve user %d: %w", current.ID, err)
 		}
 
-		primary := resolved.Primary()
+		primary := targetShard.Primary()
 		if primary == nil {
-			return fmt.Errorf("shard %q has no primary", resolved.ID())
+			return fmt.Errorf(
+				"shard %q has no primary",
+				targetShard.ID(),
+			)
 		}
 
 		if _, err := primary.Exec(
@@ -85,7 +91,7 @@ func run(ctx context.Context) error {
 		fmt.Printf(
 			"- user_id=%d shard=%s pool=%s\n",
 			current.ID,
-			resolved.ID(),
+			targetShard.ID(),
 			primary.Name(),
 		)
 	}

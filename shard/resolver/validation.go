@@ -3,6 +3,7 @@ package resolver
 import (
 	"errors"
 
+	"github.com/mkbeh/xpg/cluster"
 	"github.com/mkbeh/xpg/shard"
 )
 
@@ -14,7 +15,7 @@ func requireTopology(topology *shard.Topology) error {
 	return nil
 }
 
-func requireShardID(id shard.ID) error {
+func requireShardID(id cluster.ID) error {
 	if id == "" {
 		return errors.New("shard ID must not be empty")
 	}

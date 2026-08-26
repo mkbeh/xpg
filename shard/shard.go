@@ -8,19 +8,19 @@ import (
 	"github.com/mkbeh/xpg/cluster"
 )
 
-// ID identifies one logical shard.
-type ID = cluster.ID
-
-// Shard is a borrowed handle to one cluster registered in a Topology.
+// Shard is an immutable, restricted view of one Cluster registered in a
+// Topology.
 //
-// Shard exposes shard-local operations without exposing cluster lifecycle or
-// replica-set management.
+// Shard exposes shard-local data access without exposing cluster lifecycle or
+// replica-set management. A Shard does not own the underlying Cluster and is
+// valid only for the lifetime of its owning Topology; it must not be used after
+// Topology.Close.
 type Shard struct {
 	cluster *cluster.Cluster
 }
 
-// ID returns the logical shard ID.
-func (s Shard) ID() ID {
+// ID returns the stable logical shard ID inherited from the underlying Cluster.
+func (s Shard) ID() cluster.ID {
 	if s.cluster == nil {
 		return ""
 	}
@@ -46,10 +46,9 @@ func (s Shard) Labels() map[string]string {
 	return s.cluster.Labels()
 }
 
-// Primary returns the shard primary pool.
-//
-// Primary returns nil when no primary is configured. The returned pool is
-// borrowed and must not be closed separately.
+// Primary returns the shard primary pool, or nil when the underlying cluster
+// has no primary configured. The returned pool is borrowed and must not be
+// closed separately.
 func (s Shard) Primary() *xpg.Pool {
 	if s.cluster == nil {
 		return nil
@@ -58,7 +57,7 @@ func (s Shard) Primary() *xpg.Pool {
 	return s.cluster.Primary()
 }
 
-// ReadPool returns a borrowed pool according to policy.
+// ReadPool returns a borrowed pool for a read operation according to policy.
 func (s Shard) ReadPool(
 	ctx context.Context,
 	policy cluster.ReadPolicy,
@@ -83,8 +82,7 @@ func (s Shard) InPrimaryTx(
 	return s.cluster.InPrimaryTx(ctx, options, fn)
 }
 
-// InReadTx executes fn in a read-only transaction on a pool selected according
-// to policy within the shard.
+// InReadTx executes fn in a read-only transaction resolved within this shard.
 func (s Shard) InReadTx(
 	ctx context.Context,
 	policy cluster.ReadPolicy,

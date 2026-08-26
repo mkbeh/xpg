@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/mkbeh/xpg/cluster"
 	"github.com/mkbeh/xpg/shard"
 )
 
@@ -17,18 +18,27 @@ import (
 type Range[K cmp.Ordered] struct {
 	Start   K
 	End     K
-	ShardID shard.ID
+	ShardID cluster.ID
 }
 
-// RangeResolver routes ordered keys through non-overlapping ranges.
+// RangeResolver resolves ordered keys through bounded, non-overlapping ranges.
 type RangeResolver[K cmp.Ordered] struct {
 	ranges []rangeEntry[K]
 }
 
-// NewRange creates a resolver from non-overlapping half-open ranges.
+type rangeEntry[K cmp.Ordered] struct {
+	start K
+	end   K
+	shard shard.Shard
+
+	sourceIndex int
+}
+
+// NewRange creates a resolver from bounded, non-overlapping half-open ranges.
 //
-// The supplied ranges may be unordered. NewRange copies and sorts them by Start,
-// validates their boundaries and overlap, and leaves the caller's slice unchanged.
+// NewRange resolves every ShardID to its immutable Shard handle once, copies
+// the routing data into an internal representation, sorts it by Start, and
+// validates that ranges do not overlap. The caller's slice is not modified.
 func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*RangeResolver[K], error) {
 	if err := requireTopology(topology); err != nil {
 		return nil, err
@@ -45,8 +55,6 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 			return nil, fmt.Errorf("xpg/shard/resolver: range %d: %w", index, err)
 		}
 
-		// Using < intentionally rejects empty and reversed ranges as well as
-		// ranges with NaN boundaries for floating-point key types.
 		if !(valueRange.Start < valueRange.End) { //nolint:staticcheck // Negated comparison intentionally rejects NaN boundaries.
 			return nil, fmt.Errorf("xpg/shard/resolver: range %d must satisfy start < end", index)
 		}
@@ -56,9 +64,7 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 			return nil, fmt.Errorf(
 				"xpg/shard/resolver: range %d: %w",
 				index,
-				&shard.UnknownShardError{
-					ShardID: valueRange.ShardID,
-				},
+				&shard.UnknownShardError{ShardID: valueRange.ShardID},
 			)
 		}
 
@@ -77,15 +83,10 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 		},
 	)
 
-	// Once ranges are sorted by Start, checking adjacent entries is sufficient
-	// to detect every overlap.
 	for index := 1; index < len(entries); index++ {
 		previous := entries[index-1]
 		current := entries[index]
 
-		// Adjacent half-open ranges are valid:
-		//
-		// [0, 100) and [100, 200)
 		if previous.end <= current.start {
 			continue
 		}
@@ -102,7 +103,10 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 	}, nil
 }
 
-// Resolve returns the shard whose configured range contains key.
+// Resolve returns the shard whose range contains key.
+//
+// Resolve performs only an in-memory lookup. It does not consult topology,
+// acquire a connection, or execute a PostgreSQL query.
 func (resolver *RangeResolver[K]) Resolve(key K) (shard.Shard, error) {
 	if resolver == nil || len(resolver.ranges) == 0 {
 		return shard.Shard{}, errors.New("xpg/shard/resolver: range resolver is not initialized")
@@ -130,12 +134,4 @@ func (resolver *RangeResolver[K]) Resolve(key K) (shard.Shard, error) {
 	}
 
 	return entry.shard, nil
-}
-
-type rangeEntry[K cmp.Ordered] struct {
-	start K
-	end   K
-	shard shard.Shard
-
-	sourceIndex int
 }

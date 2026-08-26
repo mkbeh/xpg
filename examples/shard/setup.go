@@ -14,12 +14,12 @@ const (
 	defaultShardADatabaseURL = "postgres://postgres:postgres@localhost:56431/postgres?sslmode=disable"
 	defaultShardBDatabaseURL = "postgres://postgres:postgres@localhost:56432/postgres?sslmode=disable"
 
-	shardAID shard.ID = "shard-a"
-	shardBID shard.ID = "shard-b"
+	shardAID cluster.ID = "shard-a"
+	shardBID cluster.ID = "shard-b"
 )
 
 func openTopology(ctx context.Context) (*shard.Topology, error) {
-	shardA, err := openShard(
+	clusterA, err := openCluster(
 		ctx,
 		shardAID,
 		"shard.shard-a.primary",
@@ -29,10 +29,10 @@ func openTopology(ctx context.Context) (*shard.Topology, error) {
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("open shard-a: %w", err)
+		return nil, fmt.Errorf("open shard-a cluster: %w", err)
 	}
 
-	shardB, err := openShard(
+	clusterB, err := openCluster(
 		ctx,
 		shardBID,
 		"shard.shard-b.primary",
@@ -42,18 +42,20 @@ func openTopology(ctx context.Context) (*shard.Topology, error) {
 		),
 	)
 	if err != nil {
-		shardA.Close()
+		clusterA.Close()
 
-		return nil, fmt.Errorf("open shard-b: %w", err)
+		return nil, fmt.Errorf("open shard-b cluster: %w", err)
 	}
 
-	topology, err := shard.NewTopology([]shard.Config{
-		{Cluster: shardA},
-		{Cluster: shardB},
-	})
+	// After NewTopology succeeds, the topology owns both clusters and closes
+	// them through Topology.Close. On constructor failure ownership remains here.
+	topology, err := shard.NewTopology(
+		clusterA,
+		clusterB,
+	)
 	if err != nil {
-		shardB.Close()
-		shardA.Close()
+		clusterB.Close()
+		clusterA.Close()
 
 		return nil, fmt.Errorf("create topology: %w", err)
 	}
@@ -61,7 +63,12 @@ func openTopology(ctx context.Context) (*shard.Topology, error) {
 	return topology, nil
 }
 
-func openShard(ctx context.Context, id shard.ID, name, databaseURL string) (*cluster.Cluster, error) {
+func openCluster(
+	ctx context.Context,
+	id cluster.ID,
+	name string,
+	databaseURL string,
+) (*cluster.Cluster, error) {
 	pool, err := xpg.Open(
 		ctx,
 		databaseURL,
@@ -79,7 +86,7 @@ func openShard(ctx context.Context, id shard.ID, name, databaseURL string) (*clu
 		return nil, fmt.Errorf("ping pool: %w", err)
 	}
 
-	shardCluster, err := cluster.New(cluster.Config{
+	dbCluster, err := cluster.New(cluster.Config{
 		ID:      id,
 		Primary: pool,
 	})
@@ -89,7 +96,7 @@ func openShard(ctx context.Context, id shard.ID, name, databaseURL string) (*clu
 		return nil, fmt.Errorf("create cluster: %w", err)
 	}
 
-	return shardCluster, nil
+	return dbCluster, nil
 }
 
 func environment(name, fallback string) string {

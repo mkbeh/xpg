@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/mkbeh/xpg/cluster"
 )
 
-// ForEachShardResult contains the result associated with one shard.
+// ForEachShardResult contains the result of one shard callback invocation.
 type ForEachShardResult struct {
-	ShardID ID
+	ShardID cluster.ID
 	Err     error
 }
 
@@ -28,7 +30,7 @@ func (results ForEachShardResults) Err() error {
 		errs = append(
 			errs,
 			fmt.Errorf(
-				"xpg/shard: shard %q: %w",
+				"xpg/shard: shard %q callback: %w",
 				result.ShardID,
 				result.Err,
 			),
@@ -38,29 +40,20 @@ func (results ForEachShardResults) Err() error {
 	return errors.Join(errs...)
 }
 
-// ForEachShard invokes fn across the topology with at most concurrency
-// callbacks running at once. Results are returned in topology registration
-// order; callback execution order is not guaranteed.
-//
-// Callback failures and context cancellation are stored in the corresponding
-// results and can be joined with ForEachShardResults.Err. The returned error is
-// reserved for invalid invocation arguments.
+// ForEachShard invokes fn for each shard with at most concurrency callbacks
+// running at once. Results are returned in topology registration order. The
+// returned error joins all per-shard failures and is equivalent to results.Err().
 //
 // Once context cancellation is observed, callbacks that have not started are
 // skipped and their results contain ctx.Err(). Callbacks already running are
-// responsible for observing ctx. ForEachShard waits for all started callbacks
-// to finish before returning.
+// responsible for observing ctx.
 func (t *Topology) ForEachShard(
 	ctx context.Context,
 	concurrency int,
 	fn func(context.Context, Shard) error,
 ) (ForEachShardResults, error) {
-	if t == nil {
-		return nil, errors.New("xpg/shard: topology is nil")
-	}
-
-	if len(t.shards) == 0 {
-		return nil, errors.New("xpg/shard: topology is empty")
+	if t == nil || len(t.shards) == 0 {
+		return nil, errors.New("xpg/shard: topology is nil or empty")
 	}
 
 	if concurrency <= 0 {
@@ -72,8 +65,16 @@ func (t *Topology) ForEachShard(
 	}
 
 	results := make(ForEachShardResults, len(t.shards))
-	for index, shard := range t.shards {
-		results[index].ShardID = shard.ID()
+	for index, current := range t.shards {
+		results[index].ShardID = current.ID()
+	}
+
+	if err := ctx.Err(); err != nil {
+		for index := range results {
+			results[index].Err = err
+		}
+
+		return results, results.Err()
 	}
 
 	workerCount := min(concurrency, len(t.shards))
@@ -87,8 +88,6 @@ func (t *Topology) ForEachShard(
 			defer workers.Done()
 
 			for index := range jobs {
-				// An index may have been scheduled immediately before context
-				// cancellation. Skip callbacks that have not started yet.
 				if err := ctx.Err(); err != nil {
 					results[index].Err = err
 					continue
@@ -102,9 +101,6 @@ func (t *Topology) ForEachShard(
 	nextIndex := 0
 
 	for nextIndex < len(t.shards) && ctx.Err() == nil {
-		// The explicit context check above prevents scheduling new work after
-		// cancellation has already been observed. The select still handles
-		// cancellation that happens while waiting for a worker.
 		select {
 		case jobs <- nextIndex:
 			nextIndex++
@@ -115,13 +111,11 @@ func (t *Topology) ForEachShard(
 	close(jobs)
 	workers.Wait()
 
-	// Workers own results for scheduled indexes [0, nextIndex). After all
-	// workers finish, remaining indexes can be marked canceled without races.
 	if err := ctx.Err(); err != nil {
 		for index := nextIndex; index < len(results); index++ {
 			results[index].Err = err
 		}
 	}
 
-	return results, nil
+	return results, results.Err()
 }

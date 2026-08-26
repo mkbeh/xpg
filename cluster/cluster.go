@@ -15,9 +15,9 @@ type ID string
 
 // Config configures a Cluster from independently created pools.
 //
-// ID and Labels are optional metadata. New takes ownership of Primary and
-// Replicas only after it returns successfully. Cluster.Close closes all owned
-// pools.
+// ID is required. Labels are optional metadata. New takes ownership of Primary
+// and Replicas only after it returns successfully. Cluster.Close closes the
+// owned pools.
 type Config struct {
 	ID     ID
 	Labels map[string]string
@@ -27,8 +27,8 @@ type Config struct {
 	Selector ReplicaSelector
 }
 
-// Cluster represents a logical PostgreSQL cluster composed of an optional
-// primary pool and zero or more replica pools.
+// Cluster routes operations across an optional primary pool and zero or more
+// replica pools.
 //
 // A deployment with one PostgreSQL endpoint is represented by a Cluster with
 // one Primary and no Replicas. A read-only deployment may omit Primary and
@@ -52,9 +52,13 @@ type Cluster struct {
 
 // New creates a Cluster from independently configured pools.
 //
-// At least one pool is required. When Selector is nil, replicas are selected
-// using round-robin.
+// ID and at least one pool are required. When Selector is nil, replicas are
+// selected using round-robin.
 func New(config Config) (*Cluster, error) {
+	if config.ID == "" {
+		return nil, errors.New("xpg/cluster: cluster ID must not be empty")
+	}
+
 	if config.Primary != nil && config.Primary.Raw() == nil {
 		return nil, errors.New("xpg/cluster: primary pool is invalid")
 	}
@@ -96,7 +100,7 @@ func New(config Config) (*Cluster, error) {
 	}, nil
 }
 
-// ID returns the logical cluster ID.
+// ID returns the stable logical cluster ID.
 func (c *Cluster) ID() ID {
 	if c == nil {
 		return ""
@@ -149,21 +153,24 @@ func (c *Cluster) ReplicaCount() int {
 // ReplicaAt returns the replica at index in registration order.
 //
 // The returned pool is borrowed and must not be closed separately. ReplicaAt
-// panics when c is nil or index is out of range.
+// panics when c is nil or index is outside the replica set, matching ordinary
+// slice indexing semantics.
 func (c *Cluster) ReplicaAt(index int) *xpg.Pool {
 	return c.replicas[index]
 }
 
-// Close closes replicas in reverse registration order, then closes the primary
-// when one is configured. Close is safe to call multiple times.
+// Close closes all replica pools in reverse registration order and then closes
+// the primary pool when one is configured.
+//
+// Close is safe to call multiple times.
 func (c *Cluster) Close() {
 	if c == nil {
 		return
 	}
 
 	c.closeOnce.Do(func() {
-		for _, replica := range slices.Backward(c.replicas) {
-			replica.Close()
+		for _, v := range slices.Backward(c.replicas) {
+			v.Close()
 		}
 
 		if c.primary != nil {
