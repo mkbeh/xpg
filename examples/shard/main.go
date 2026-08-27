@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mkbeh/xpg/topology/shard"
 	"github.com/mkbeh/xpg/topology/shard/resolver"
 )
 
@@ -90,25 +89,6 @@ func run(ctx context.Context) error {
 			current.ID,
 			targetShard.ID(),
 			primary.Name(),
-		)
-	}
-
-	groups, err := shard.GroupByShard(
-		userResolver,
-		[]uint64{142, 42, 143, 43},
-	)
-	if err != nil {
-		return fmt.Errorf("group user IDs: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println("grouping:")
-
-	for _, group := range groups {
-		fmt.Printf(
-			"- shard=%s user_ids=%v\n",
-			group.Shard.ID(),
-			group.Keys,
 		)
 	}
 
