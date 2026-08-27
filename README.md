@@ -73,8 +73,6 @@ fmt.Println(message) // Outputs: hello from xpg
 ```
 <!-- @formatter:on -->
 
-### Transactions
-
 `xpg` provides managed transactions using the native `pgx` transaction API. Returning `nil` commits the transaction;
 returning an error rolls it back.
 
@@ -89,9 +87,8 @@ err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) erro
 
 Savepoints can isolate optional work without aborting the outer transaction.
 
-### Advisory Locks
-
-`xpg` provides transaction-level PostgreSQL advisory locks for coordinating concurrent work.
+Transaction-level PostgreSQL advisory locks can coordinate concurrent work across application instances using the same
+database. The lock is held for the lifetime of the transaction and released automatically on commit or rollback.
 
 <!-- @formatter:off -->
 ```go
@@ -106,11 +103,8 @@ err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) erro
 ```
 <!-- @formatter:on -->
 
-The lock is held for the duration of the transaction and released automatically on commit or rollback.
-
-### Error Handling
-
-`xpg` provides helpers for classifying PostgreSQL errors and inspecting SQLSTATE codes.
+For error handling, `xpg` provides semantic helpers for classifying PostgreSQL failures and inspecting SQLSTATE codes
+without manual string matching.
 
 <!-- @formatter:off -->
 ```go
@@ -127,7 +121,7 @@ case err != nil:
 ```
 <!-- @formatter:on -->
 
-The underlying SQLSTATE code is also available through `xpg.SQLState`. Helpers cover constraint violations,
+The underlying SQLSTATE code is available through `xpg.SQLState(err)`. Helpers cover constraint violations,
 serialization failures, deadlocks, lock errors, query cancellation, and connection failures.
 
 ## Clustering
@@ -136,40 +130,132 @@ The `topology/cluster` package groups primary and replica pools into a logical c
 
 <!-- @formatter:off -->
 ```go
-orders, err := cluster.New(cluster.Config{
-	ID:       "orders",
+wallets, err := cluster.New(cluster.Config{
+	ID:       "wallets",
 	Primary:  primary,
 	Replicas: []*xpg.Pool{replicaA, replicaB},
 })
 if err != nil {
 	panic(err)
 }
-defer orders.Close()
+defer wallets.Close()
 
 // Route writes explicitly to the primary.
-primaryPool := orders.Primary()
+primaryPool := wallets.Primary()
 
-_, err = primaryPool.Exec(ctx, "UPDATE orders SET status = 'processed' WHERE id = $1", orderID)
+_, err = primaryPool.Exec(ctx, "UPDATE wallets SET frozen = true WHERE id = $1", walletID)
 if err != nil {
 	panic(err)
 }
 
 // Route reads according to the selected policy.
-readPool, err := orders.ReadPool(ctx, cluster.ReadReplicaPreferred)
+readPool, err := wallets.ReadPool(ctx, cluster.ReadReplicaPreferred)
 if err != nil {
 	panic(err)
 }
 
-var status string
-err = readPool.QueryRow(ctx, "SELECT status FROM orders WHERE id = $1", orderID).Scan(&status)
+var frozen bool
+err = readPool.QueryRow(ctx, "SELECT frozen FROM wallets WHERE id = $1", walletID).Scan(&frozen)
 if err != nil {
 	panic(err)
 }
 ```
 <!-- @formatter:on -->
 
-Read policies support primary-only, replica-required, and replica-preferred routing with primary fallback when no
-replica is available. Replica selection is round-robin by default and can be customized.
+### Cluster Transactions
+
+Cluster transactions combine explicit primary/replica routing with the native `pgx` transaction API.
+
+#### Primary Transactions
+
+`InPrimaryTx` runs the transaction on the cluster primary and is intended for atomic multi-step writes.
+
+<!-- @formatter:off -->
+
+```go
+err := wallets.InPrimaryTx(
+    ctx,
+    pgx.TxOptions{},
+    func(ctx context.Context, tx pgx.Tx) error {
+        const debitQuery = `
+            UPDATE wallets
+            SET balance = balance - $1
+            WHERE id = $2 AND balance >= $1
+        `
+
+        result, err := tx.Exec(ctx, debitQuery, amount, fromID)
+        if err != nil {
+            return err
+        }
+
+        if result.RowsAffected() == 0 {
+            return errors.New("insufficient funds or wallet not found")
+        }
+
+        const creditQuery = `
+            UPDATE wallets
+            SET balance = balance + $1
+            WHERE id = $2
+        `
+
+        _, err = tx.Exec(ctx, creditQuery, amount, toID)
+
+        return err
+    },
+)
+```
+
+<!-- @formatter:on -->
+
+The transaction commits on `nil` and rolls back on error.
+
+#### Read Transactions
+
+`InReadTx` routes the transaction according to the selected read policy and enforces PostgreSQL read-only mode. Use it
+for read workloads that can run on replicas.
+
+<!-- @formatter:off -->
+
+```go
+var (
+    totalWallets int64
+    totalBalance int64
+)
+
+err := wallets.InReadTx(
+    ctx,
+    cluster.ReadReplicaPreferred,
+    cluster.ReadTxOptions{
+        IsoLevel: pgx.RepeatableRead,
+    },
+    func(ctx context.Context, tx pgx.Tx) error {
+        const query = `
+            SELECT count(*), coalesce(sum(balance), 0)
+            FROM wallets
+            WHERE created_at > $1
+        `
+
+        return tx.QueryRow(ctx, query, since).Scan(
+            &totalWallets,
+            &totalBalance,
+        )
+    },
+)
+```
+
+<!-- @formatter:on -->
+
+#### Read Routing Policies
+
+Read policies control how reads and read-only transactions are routed across the cluster:
+
+| Policy                 | Primary Fallback | Behavior                                                                              |
+| :--------------------- | :--------------: | :------------------------------------------------------------------------------------ |
+| `ReadPrimary`          |         —        | Always routes reads to the primary.                                                   |
+| `ReadReplicaRequired`  |        No        | Requires a replica and returns `ErrNoReplica` when none can be selected.              |
+| `ReadReplicaPreferred` |        Yes       | Prefers a replica and falls back to the primary only when no replica can be selected. |
+
+Replica selection uses round-robin by default and can be customized by implementing `ReplicaSelector`.
 
 ## Sharding
 
@@ -178,7 +264,7 @@ topology. Routing strategies live under `topology/shard/resolver`.
 
 <!-- @formatter:off -->
 ```go
-topology, err := shard.NewTopology(shardA, shardB)
+topology, err := shard.NewTopology(clusterA, ClusterB)
 if err != nil {
 	panic(err)
 }
