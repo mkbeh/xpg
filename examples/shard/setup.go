@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/mkbeh/xpg"
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/cluster"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 const (
@@ -19,41 +20,54 @@ const (
 )
 
 func openTopology(ctx context.Context) (*shard.Topology, error) {
-	shardA, err := openShard(
-		ctx,
-		shardAID,
-		"shard.shard-a.primary",
-		environment(
-			"XPG_SHARD_A_DATABASE_URL",
-			defaultShardADatabaseURL,
-		),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("open shard-a: %w", err)
+	type clusterConfig struct {
+		id          cluster.ID
+		name        string
+		databaseURL string
 	}
 
-	shardB, err := openShard(
-		ctx,
-		shardBID,
-		"shard.shard-b.primary",
-		environment(
-			"XPG_SHARD_B_DATABASE_URL",
-			defaultShardBDatabaseURL,
-		),
-	)
-	if err != nil {
-		shardA.Close()
-
-		return nil, fmt.Errorf("open shard-b: %w", err)
+	configs := []clusterConfig{
+		{
+			id:   shardAID,
+			name: "shard.shard-a.primary",
+			databaseURL: environment(
+				"XPG_SHARD_A_DATABASE_URL",
+				defaultShardADatabaseURL,
+			),
+		},
+		{
+			id:   shardBID,
+			name: "shard.shard-b.primary",
+			databaseURL: environment(
+				"XPG_SHARD_B_DATABASE_URL",
+				defaultShardBDatabaseURL,
+			),
+		},
 	}
 
-	topology, err := shard.NewTopology([]shard.Config{
-		{Cluster: shardA},
-		{Cluster: shardB},
-	})
+	clusters := make([]*cluster.Cluster, 0, len(configs))
+
+	for _, config := range configs {
+		dbCluster, err := openCluster(
+			ctx,
+			config.id,
+			config.name,
+			config.databaseURL,
+		)
+		if err != nil {
+			closeClusters(clusters)
+
+			return nil, fmt.Errorf("open %s cluster: %w", config.id, err)
+		}
+
+		clusters = append(clusters, dbCluster)
+	}
+
+	// After NewTopology succeeds, the topology owns all clusters and closes
+	// them through Topology.Close. On constructor failure ownership remains here.
+	topology, err := shard.NewTopology(clusters...)
 	if err != nil {
-		shardB.Close()
-		shardA.Close()
+		closeClusters(clusters)
 
 		return nil, fmt.Errorf("create topology: %w", err)
 	}
@@ -61,7 +75,12 @@ func openTopology(ctx context.Context) (*shard.Topology, error) {
 	return topology, nil
 }
 
-func openShard(ctx context.Context, id shard.ID, name, databaseURL string) (*cluster.Cluster, error) {
+func openCluster(
+	ctx context.Context,
+	id shard.ID,
+	name string,
+	databaseURL string,
+) (*cluster.Cluster, error) {
 	pool, err := xpg.Open(
 		ctx,
 		databaseURL,
@@ -79,7 +98,7 @@ func openShard(ctx context.Context, id shard.ID, name, databaseURL string) (*clu
 		return nil, fmt.Errorf("ping pool: %w", err)
 	}
 
-	shardCluster, err := cluster.New(cluster.Config{
+	dbCluster, err := cluster.New(cluster.Config{
 		ID:      id,
 		Primary: pool,
 	})
@@ -89,7 +108,13 @@ func openShard(ctx context.Context, id shard.ID, name, databaseURL string) (*clu
 		return nil, fmt.Errorf("create cluster: %w", err)
 	}
 
-	return shardCluster, nil
+	return dbCluster, nil
+}
+
+func closeClusters(clusters []*cluster.Cluster) {
+	for _, cluster := range slices.Backward(clusters) {
+		cluster.Close()
+	}
 }
 
 func environment(name, fallback string) string {

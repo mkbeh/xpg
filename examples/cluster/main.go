@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/mkbeh/xpg/cluster"
+	"github.com/mkbeh/xpg/topology/cluster"
 )
 
 type nodeInfo struct {

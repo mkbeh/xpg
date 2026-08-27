@@ -1,0 +1,94 @@
+package cluster
+
+import (
+	"context"
+	"errors"
+	"sync/atomic"
+)
+
+// ReplicaInfo contains immutable metadata captured from a replica pool when the
+// Cluster is created.
+type ReplicaInfo struct {
+	name   string
+	labels map[string]string
+}
+
+// Name returns the logical replica pool name.
+func (info ReplicaInfo) Name() string {
+	return info.name
+}
+
+// Label returns one replica label without allocating a copy of all labels.
+func (info ReplicaInfo) Label(key string) (string, bool) {
+	value, ok := info.labels[key]
+
+	return value, ok
+}
+
+// Labels returns a defensive copy of replica labels.
+func (info ReplicaInfo) Labels() map[string]string {
+	return cloneLabels(info.labels)
+}
+
+// ReplicaSet provides read-only access to replica metadata.
+type ReplicaSet interface {
+	Len() int
+	At(index int) ReplicaInfo
+}
+
+type replicaMetadata []ReplicaInfo
+
+func (replicas replicaMetadata) Len() int {
+	return len(replicas)
+}
+
+func (replicas replicaMetadata) At(index int) ReplicaInfo {
+	return replicas[index]
+}
+
+// ReplicaSelector selects one replica from the supplied metadata.
+//
+// Implementations must be safe for concurrent use. Select must return
+// ErrNoReplica when no replica is eligible for selection. Other errors are
+// propagated to the caller. A successful call must return a valid replica
+// index.
+type ReplicaSelector interface {
+	Select(ctx context.Context, replicas ReplicaSet) (index int, err error)
+}
+
+// ReplicaSelectorFunc adapts a function to ReplicaSelector.
+type ReplicaSelectorFunc func(context.Context, ReplicaSet) (int, error)
+
+// Select calls the wrapped selector function.
+func (selector ReplicaSelectorFunc) Select(ctx context.Context, replicas ReplicaSet) (int, error) {
+	if selector == nil {
+		return -1, errors.New("xpg/topology/cluster: replica selector function is nil")
+	}
+
+	return selector(ctx, replicas)
+}
+
+// RoundRobinSelector returns a concurrency-safe selector that distributes
+// selections across replicas in registration order.
+func RoundRobinSelector() ReplicaSelector {
+	return &roundRobinSelector{}
+}
+
+type roundRobinSelector struct {
+	next atomic.Uint64
+}
+
+func (selector *roundRobinSelector) Select(_ context.Context, replicas ReplicaSet) (int, error) {
+	length := replicas.Len()
+
+	switch length {
+	case 0:
+		return -1, ErrNoReplica
+	case 1:
+		return 0, nil
+	}
+
+	next := selector.next.Add(1) - 1
+
+	return int(next % uint64(length)), nil
+}

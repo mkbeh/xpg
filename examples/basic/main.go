@@ -104,11 +104,7 @@ func upsertUsers(ctx context.Context, pool *xpg.Pool) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
-func loadUser(
-	ctx context.Context,
-	pool *xpg.Pool,
-	userID int64,
-) (user, error) {
+func loadUser(ctx context.Context, pool *xpg.Pool, userID int64) (user, error) {
 	var selected user
 
 	err := pool.QueryRow(
@@ -134,10 +130,7 @@ func loadUser(
 	return selected, nil
 }
 
-func listActiveUsers(
-	ctx context.Context,
-	pool *xpg.Pool,
-) ([]user, error) {
+func listActiveUsers(ctx context.Context, pool *xpg.Pool) ([]user, error) {
 	rows, err := pool.Query(
 		ctx,
 		`SELECT

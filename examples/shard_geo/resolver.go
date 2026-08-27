@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/mkbeh/xpg/shard"
-	"github.com/mkbeh/xpg/shard/resolver"
+	"github.com/mkbeh/xpg/topology/shard"
+	"github.com/mkbeh/xpg/topology/shard/resolver"
 )
 
 func newTenantResolver(topology *shard.Topology) (shard.Resolver[tenantKey], error) {
@@ -31,7 +31,7 @@ func newTenantResolver(topology *shard.Topology) (shard.Resolver[tenantKey], err
 	}
 
 	resolve := resolver.ResolveFunc[tenantKey](
-		func(key tenantKey, _ *shard.Topology) (shard.ID, error) {
+		func(key tenantKey) (shard.ID, error) {
 			id, ok := shardByRegion[key.Region]
 			if !ok {
 				return "", fmt.Errorf(

@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/mkbeh/xpg"
-	"github.com/mkbeh/xpg/cluster"
+	"github.com/mkbeh/xpg/topology/cluster"
 )
 
 const (
@@ -16,50 +17,64 @@ const (
 )
 
 func openCluster(ctx context.Context) (*cluster.Cluster, error) {
-	primary, err := openPool(
-		ctx,
-		environment("XPG_PRIMARY_DATABASE_URL", defaultPrimaryDatabaseURL),
-		"cluster.primary",
-		"primary",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("open primary pool: %w", err)
+	type poolConfig struct {
+		databaseURL string
+		name        string
+		role        string
 	}
 
-	replicaOne, err := openPool(
-		ctx,
-		environment("XPG_REPLICA_ONE_DATABASE_URL", defaultReplicaOneURL),
-		"cluster.replica-one",
-		"replica",
-	)
-	if err != nil {
-		primary.Close()
-
-		return nil, fmt.Errorf("open replica-one pool: %w", err)
+	configs := []poolConfig{
+		{
+			databaseURL: environment(
+				"XPG_PRIMARY_DATABASE_URL",
+				defaultPrimaryDatabaseURL,
+			),
+			name: "cluster.primary",
+			role: "primary",
+		},
+		{
+			databaseURL: environment(
+				"XPG_REPLICA_ONE_DATABASE_URL",
+				defaultReplicaOneURL,
+			),
+			name: "cluster.replica-one",
+			role: "replica",
+		},
+		{
+			databaseURL: environment(
+				"XPG_REPLICA_TWO_DATABASE_URL",
+				defaultReplicaTwoURL,
+			),
+			name: "cluster.replica-two",
+			role: "replica",
+		},
 	}
 
-	replicaTwo, err := openPool(
-		ctx,
-		environment("XPG_REPLICA_TWO_DATABASE_URL", defaultReplicaTwoURL),
-		"cluster.replica-two",
-		"replica",
-	)
-	if err != nil {
-		replicaOne.Close()
-		primary.Close()
+	pools := make([]*xpg.Pool, 0, len(configs))
 
-		return nil, fmt.Errorf("open replica-two pool: %w", err)
+	for _, config := range configs {
+		pool, err := openPool(
+			ctx,
+			config.databaseURL,
+			config.name,
+			config.role,
+		)
+		if err != nil {
+			closePools(pools)
+
+			return nil, fmt.Errorf("open %s pool: %w", config.name, err)
+		}
+
+		pools = append(pools, pool)
 	}
 
 	dbCluster, err := cluster.New(cluster.Config{
 		ID:       "cluster-example",
-		Primary:  primary,
-		Replicas: []*xpg.Pool{replicaOne, replicaTwo},
+		Primary:  pools[0],
+		Replicas: pools[1:],
 	})
 	if err != nil {
-		replicaTwo.Close()
-		replicaOne.Close()
-		primary.Close()
+		closePools(pools)
 
 		return nil, fmt.Errorf("create cluster: %w", err)
 	}
@@ -85,6 +100,12 @@ func openPool(ctx context.Context, databaseURL, name, role string) (*xpg.Pool, e
 	}
 
 	return pool, nil
+}
+
+func closePools(pools []*xpg.Pool) {
+	for _, pool := range slices.Backward(pools) {
+		pool.Close()
+	}
 }
 
 func environment(key, fallback string) string {

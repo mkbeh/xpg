@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/mkbeh/xpg"
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/cluster"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 const (
@@ -19,43 +20,56 @@ const (
 )
 
 func openTopology(ctx context.Context) (*shard.Topology, error) {
-	shardEU, err := openShard(
-		ctx,
-		shardEUID,
-		"eu",
-		"geo.shard-eu.primary",
-		environment(
-			"XPG_SHARD_EU_DATABASE_URL",
-			defaultShardEUDatabaseURL,
-		),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("open shard-eu: %w", err)
+	type shardConfig struct {
+		id          cluster.ID
+		region      string
+		name        string
+		databaseURL string
 	}
 
-	shardUS, err := openShard(
-		ctx,
-		shardUSID,
-		"us",
-		"geo.shard-us.primary",
-		environment(
-			"XPG_SHARD_US_DATABASE_URL",
-			defaultShardUSDatabaseURL,
-		),
-	)
-	if err != nil {
-		shardEU.Close()
-
-		return nil, fmt.Errorf("open shard-us: %w", err)
+	configs := []shardConfig{
+		{
+			id:     shardEUID,
+			region: "eu",
+			name:   "geo.shard-eu.primary",
+			databaseURL: environment(
+				"XPG_SHARD_EU_DATABASE_URL",
+				defaultShardEUDatabaseURL,
+			),
+		},
+		{
+			id:     shardUSID,
+			region: "us",
+			name:   "geo.shard-us.primary",
+			databaseURL: environment(
+				"XPG_SHARD_US_DATABASE_URL",
+				defaultShardUSDatabaseURL,
+			),
+		},
 	}
 
-	topology, err := shard.NewTopology([]shard.Config{
-		{Cluster: shardEU},
-		{Cluster: shardUS},
-	})
+	clusters := make([]*cluster.Cluster, 0, len(configs))
+
+	for _, config := range configs {
+		dbCluster, err := openShard(
+			ctx,
+			config.id,
+			config.region,
+			config.name,
+			config.databaseURL,
+		)
+		if err != nil {
+			closeClusters(clusters)
+
+			return nil, fmt.Errorf("open %s shard: %w", config.id, err)
+		}
+
+		clusters = append(clusters, dbCluster)
+	}
+
+	topology, err := shard.NewTopology(clusters...)
 	if err != nil {
-		shardUS.Close()
-		shardEU.Close()
+		closeClusters(clusters)
 
 		return nil, fmt.Errorf("create topology: %w", err)
 	}
@@ -99,6 +113,12 @@ func openShard(
 	}
 
 	return shardCluster, nil
+}
+
+func closeClusters(clusters []*cluster.Cluster) {
+	for _, cluster := range slices.Backward(clusters) {
+		cluster.Close()
+	}
 }
 
 func environment(name, fallback string) string {

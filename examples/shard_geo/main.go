@@ -7,7 +7,7 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 type tenantKey struct {
