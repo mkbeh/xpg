@@ -1,0 +1,50 @@
+services:
+  postgres-shard-a:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "58431:5432"
+    volumes:
+      - shard-group-a-data:/var/lib/postgresql
+    healthcheck:
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres-shard-b:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "58432:5432"
+    volumes:
+      - shard-group-b-data:/var/lib/postgresql
+    healthcheck:
+      test: "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+      interval: 2s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  adminer:
+    image: adminer:standalone
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-shard-a
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-shard-a:
+        condition: service_healthy
+      postgres-shard-b:
+        condition: service_healthy
+
+volumes:
+  shard-group-a-data:
+  shard-group-b-data:
