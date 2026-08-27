@@ -23,7 +23,7 @@ func (c *Cluster) InPrimaryTx(
 	fn func(context.Context, pgx.Tx) error,
 ) error {
 	if c == nil {
-		return errors.New("xpg/cluster: cluster is nil")
+		return errors.New("xpg/topology/cluster: cluster is nil")
 	}
 
 	pool, err := c.resolvePrimary()

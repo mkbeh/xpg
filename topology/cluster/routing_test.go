@@ -45,7 +45,7 @@ func TestParseReadPolicyRejectsUnknown(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), `xpg/cluster: unknown read policy "nearest"`; got != want {
+	if got, want := err.Error(), `xpg/topology/cluster: unknown read policy "nearest"`; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -84,7 +84,7 @@ func TestReadPoolNilCluster(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), "xpg/cluster: cluster is nil"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: cluster is nil"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -330,7 +330,7 @@ func TestReadPoolRejectsSelectorIndex(t *testing.T) {
 			}
 
 			want := fmt.Sprintf(
-				"xpg/cluster: replica selector returned invalid index %d for 1 replicas",
+				"xpg/topology/cluster: replica selector returned invalid index %d for 1 replicas",
 				test.index,
 			)
 
@@ -364,7 +364,7 @@ func TestReadPoolPreservesSelectorError(t *testing.T) {
 		t.Fatalf("ReadPool() error = %v, want wrapped selector error", err)
 	}
 
-	if got, want := err.Error(), "xpg/cluster: select replica: boom"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: select replica: boom"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -384,7 +384,7 @@ func TestReadPoolRejectsUnsupportedPolicy(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), "xpg/cluster: unsupported read policy 255"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: unsupported read policy 255"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }

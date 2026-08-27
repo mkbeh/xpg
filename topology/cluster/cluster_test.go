@@ -7,16 +7,34 @@ import (
 	"github.com/mkbeh/xpg"
 )
 
-func TestNewRequiresPool(t *testing.T) {
+func TestNewRequiresID(t *testing.T) {
 	t.Parallel()
 
-	cluster, err := New(Config{})
+	primary := newTestPool(t, "primary", nil)
+
+	cluster, err := New(Config{
+		Primary: primary,
+	})
 	if err == nil {
 		cluster.Close()
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), "xpg/cluster: at least one pool is required"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: cluster ID must not be empty"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestNewRequiresPool(t *testing.T) {
+	t.Parallel()
+
+	cluster, err := New(Config{ID: testClusterID})
+	if err == nil {
+		cluster.Close()
+		t.Fatal("expected error")
+	}
+
+	if got, want := err.Error(), "xpg/topology/cluster: at least one pool is required"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -25,6 +43,7 @@ func TestNewRejectsInvalidPrimary(t *testing.T) {
 	t.Parallel()
 
 	cluster, err := New(Config{
+		ID:      testClusterID,
 		Primary: &xpg.Pool{},
 	})
 	if err == nil {
@@ -32,7 +51,7 @@ func TestNewRejectsInvalidPrimary(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), "xpg/cluster: primary pool is invalid"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: primary pool is invalid"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -59,6 +78,7 @@ func TestNewRejectsInvalidReplica(t *testing.T) {
 			t.Parallel()
 
 			cluster, err := New(Config{
+				ID:       testClusterID,
 				Replicas: []*xpg.Pool{test.replica},
 			})
 			if err == nil {
@@ -66,7 +86,7 @@ func TestNewRejectsInvalidReplica(t *testing.T) {
 				t.Fatal("expected error")
 			}
 
-			if got, want := err.Error(), "xpg/cluster: replica 0 is invalid"; got != want {
+			if got, want := err.Error(), "xpg/topology/cluster: replica 0 is invalid"; got != want {
 				t.Fatalf("error = %q, want %q", got, want)
 			}
 		})
@@ -130,6 +150,7 @@ func TestNewRejectsEmptyLabelKey(t *testing.T) {
 	primary := newTestPool(t, "primary", nil)
 
 	cluster, err := New(Config{
+		ID: testClusterID,
 		Labels: map[string]string{
 			"": "value",
 		},
@@ -140,7 +161,7 @@ func TestNewRejectsEmptyLabelKey(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), "xpg/cluster: label key must not be empty"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: label key must not be empty"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -153,6 +174,7 @@ func TestNewClonesReplicaSlice(t *testing.T) {
 	replicas := []*xpg.Pool{replicaA}
 
 	cluster, err := New(Config{
+		ID:       testClusterID,
 		Replicas: replicas,
 	})
 	if err != nil {
@@ -173,6 +195,7 @@ func TestNewAllowsDuplicatePools(t *testing.T) {
 	pool := newTestPool(t, "shared", nil)
 
 	cluster, err := New(Config{
+		ID:      testClusterID,
 		Primary: pool,
 		Replicas: []*xpg.Pool{
 			pool,
@@ -234,6 +257,7 @@ func TestNewCapturesReplicaMetadata(t *testing.T) {
 	})
 
 	cluster, err := New(Config{
+		ID:       testClusterID,
 		Replicas: []*xpg.Pool{replica},
 		Selector: selector,
 	})
@@ -308,6 +332,7 @@ func TestCloseIsIdempotent(t *testing.T) {
 	replica := newTestPool(t, "replica", nil)
 
 	cluster, err := New(Config{
+		ID:       testClusterID,
 		Primary:  primary,
 		Replicas: []*xpg.Pool{replica},
 	})

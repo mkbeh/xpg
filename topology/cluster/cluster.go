@@ -56,19 +56,19 @@ type Cluster struct {
 // selected using round-robin.
 func New(config Config) (*Cluster, error) {
 	if config.ID == "" {
-		return nil, errors.New("xpg/cluster: cluster ID must not be empty")
+		return nil, errors.New("xpg/topology/cluster: cluster ID must not be empty")
 	}
 
 	if config.Primary != nil && config.Primary.Raw() == nil {
-		return nil, errors.New("xpg/cluster: primary pool is invalid")
+		return nil, errors.New("xpg/topology/cluster: primary pool is invalid")
 	}
 
 	if config.Primary == nil && len(config.Replicas) == 0 {
-		return nil, errors.New("xpg/cluster: at least one pool is required")
+		return nil, errors.New("xpg/topology/cluster: at least one pool is required")
 	}
 
 	if err := validateLabels(config.Labels); err != nil {
-		return nil, fmt.Errorf("xpg/cluster: %w", err)
+		return nil, fmt.Errorf("xpg/topology/cluster: %w", err)
 	}
 
 	replicas := slices.Clone(config.Replicas)
@@ -76,7 +76,7 @@ func New(config Config) (*Cluster, error) {
 
 	for index, replica := range replicas {
 		if replica == nil || replica.Raw() == nil {
-			return nil, fmt.Errorf("xpg/cluster: replica %d is invalid", index)
+			return nil, fmt.Errorf("xpg/topology/cluster: replica %d is invalid", index)
 		}
 
 		metadata[index] = ReplicaInfo{

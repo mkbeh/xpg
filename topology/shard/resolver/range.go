@@ -44,24 +44,24 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 	}
 
 	if len(ranges) == 0 {
-		return nil, errors.New("xpg/shard/resolver: range resolver requires at least one range")
+		return nil, errors.New("xpg/topology/shard/resolver: range resolver requires at least one range")
 	}
 
 	entries := make([]rangeEntry[K], len(ranges))
 
 	for index, valueRange := range ranges {
 		if err := requireShardID(valueRange.ShardID); err != nil {
-			return nil, fmt.Errorf("xpg/shard/resolver: range %d: %w", index, err)
+			return nil, fmt.Errorf("xpg/topology/shard/resolver: range %d: %w", index, err)
 		}
 
 		if !(valueRange.Start < valueRange.End) { //nolint:staticcheck // Negated comparison intentionally rejects NaN boundaries.
-			return nil, fmt.Errorf("xpg/shard/resolver: range %d must satisfy start < end", index)
+			return nil, fmt.Errorf("xpg/topology/shard/resolver: range %d must satisfy start < end", index)
 		}
 
 		resolved, ok := topology.Shard(valueRange.ShardID)
 		if !ok {
 			return nil, fmt.Errorf(
-				"xpg/shard/resolver: range %d: %w",
+				"xpg/topology/shard/resolver: range %d: %w",
 				index,
 				&shard.UnknownShardError{ShardID: valueRange.ShardID},
 			)
@@ -91,7 +91,7 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 		}
 
 		return nil, fmt.Errorf(
-			"xpg/shard/resolver: ranges %d and %d overlap",
+			"xpg/topology/shard/resolver: ranges %d and %d overlap",
 			previous.sourceIndex,
 			current.sourceIndex,
 		)
@@ -108,7 +108,7 @@ func NewRange[K cmp.Ordered](topology *shard.Topology, ranges []Range[K]) (*Rang
 // acquire a connection, or execute a PostgreSQL query.
 func (resolver *RangeResolver[K]) Resolve(key K) (shard.Shard, error) {
 	if resolver == nil || len(resolver.ranges) == 0 {
-		return shard.Shard{}, errors.New("xpg/shard/resolver: range resolver is not initialized")
+		return shard.Shard{}, errors.New("xpg/topology/shard/resolver: range resolver is not initialized")
 	}
 
 	// Non-overlap validation guarantees strictly increasing upper boundaries,

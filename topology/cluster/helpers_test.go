@@ -7,7 +7,10 @@ import (
 	"github.com/mkbeh/xpg"
 )
 
-const testDatabaseURL = "postgres://postgres:postgres@127.0.0.1:1/postgres?sslmode=disable" //nolint:gosec // Test-only DSN with non-production credentials.
+const (
+	testDatabaseURL = "postgres://postgres:postgres@127.0.0.1:1/postgres?sslmode=disable" //nolint:gosec // Test-only DSN with non-production credentials.
+	testClusterID   = ID("test-cluster")
+)
 
 func newTestPool(t *testing.T, name string, labels map[string]string) *xpg.Pool {
 	t.Helper()
@@ -39,6 +42,10 @@ func newTestPool(t *testing.T, name string, labels map[string]string) *xpg.Pool 
 
 func newTestCluster(t *testing.T, config Config) *Cluster {
 	t.Helper()
+
+	if config.ID == "" {
+		config.ID = testClusterID
+	}
 
 	cluster, err := New(config)
 	if err != nil {

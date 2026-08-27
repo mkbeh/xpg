@@ -20,7 +20,7 @@ type KeyEncoderFunc[K any] func(K) ([]byte, error)
 // Encode calls the wrapped encoder function.
 func (encoder KeyEncoderFunc[K]) Encode(key K) ([]byte, error) {
 	if encoder == nil {
-		return nil, errors.New("xpg/shard/resolver: key encoder function is nil")
+		return nil, errors.New("xpg/topology/shard/resolver: key encoder function is nil")
 	}
 
 	return encoder(key)

@@ -27,7 +27,7 @@ func TestInPrimaryTxNilCluster(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), "xpg/cluster: cluster is nil"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: cluster is nil"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 

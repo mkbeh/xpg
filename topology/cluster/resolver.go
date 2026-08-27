@@ -41,7 +41,7 @@ func ParseReadPolicy(value string) (ReadPolicy, error) {
 		return ReadReplicaRequired, nil
 	default:
 		return 0, fmt.Errorf(
-			"xpg/cluster: unknown read policy %q",
+			"xpg/topology/cluster: unknown read policy %q",
 			value,
 		)
 	}
@@ -67,7 +67,7 @@ func (policy ReadPolicy) String() string {
 // selected. Other selector errors are returned to the caller.
 func (c *Cluster) ReadPool(ctx context.Context, policy ReadPolicy) (*xpg.Pool, error) {
 	if c == nil {
-		return nil, errors.New("xpg/cluster: cluster is nil")
+		return nil, errors.New("xpg/topology/cluster: cluster is nil")
 	}
 
 	switch policy {
@@ -90,7 +90,7 @@ func (c *Cluster) ReadPool(ctx context.Context, policy ReadPolicy) (*xpg.Pool, e
 		return c.resolveReplica(ctx)
 
 	default:
-		return nil, fmt.Errorf("xpg/cluster: unsupported read policy %d", policy)
+		return nil, fmt.Errorf("xpg/topology/cluster: unsupported read policy %d", policy)
 	}
 }
 
@@ -109,12 +109,12 @@ func (c *Cluster) resolveReplica(ctx context.Context) (*xpg.Pool, error) {
 
 	index, err := c.selector.Select(ctx, c.metadata)
 	if err != nil {
-		return nil, fmt.Errorf("xpg/cluster: select replica: %w", err)
+		return nil, fmt.Errorf("xpg/topology/cluster: select replica: %w", err)
 	}
 
 	if index < 0 || index >= len(c.replicas) {
 		return nil, fmt.Errorf(
-			"xpg/cluster: replica selector returned invalid index %d for %d replicas",
+			"xpg/topology/cluster: replica selector returned invalid index %d for %d replicas",
 			index,
 			len(c.replicas),
 		)

@@ -24,7 +24,7 @@ type Topology struct {
 // cluster registration order. Every cluster must have a unique, non-empty ID.
 func NewTopology(clusters ...*cluster.Cluster) (*Topology, error) {
 	if len(clusters) == 0 {
-		return nil, errors.New("xpg/shard: topology must contain at least one shard")
+		return nil, errors.New("xpg/topology/shard: topology must contain at least one shard")
 	}
 
 	shards := make([]Shard, len(clusters))
@@ -32,16 +32,16 @@ func NewTopology(clusters ...*cluster.Cluster) (*Topology, error) {
 
 	for index, candidate := range clusters {
 		if candidate == nil {
-			return nil, fmt.Errorf("xpg/shard: shard %d: cluster is nil", index)
+			return nil, fmt.Errorf("xpg/topology/shard: shard %d: cluster is nil", index)
 		}
 
 		id := candidate.ID()
 		if id == "" {
-			return nil, fmt.Errorf("xpg/shard: shard %d: cluster ID must not be empty", index)
+			return nil, fmt.Errorf("xpg/topology/shard: shard %d: cluster ID must not be empty", index)
 		}
 
 		if _, exists := shardsByID[id]; exists {
-			return nil, fmt.Errorf("xpg/shard: duplicate shard ID %q", id)
+			return nil, fmt.Errorf("xpg/topology/shard: duplicate shard ID %q", id)
 		}
 
 		current := Shard{cluster: candidate}

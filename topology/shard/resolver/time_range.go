@@ -46,27 +46,27 @@ func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResol
 	}
 
 	if len(ranges) == 0 {
-		return nil, errors.New("xpg/shard/resolver: time range resolver requires at least one range")
+		return nil, errors.New("xpg/topology/shard/resolver: time range resolver requires at least one range")
 	}
 
 	entries := make([]timeRangeEntry, len(ranges))
 
 	for index, valueRange := range ranges {
 		if err := requireShardID(valueRange.ShardID); err != nil {
-			return nil, fmt.Errorf("xpg/shard/resolver: time range %d: %w", index, err)
+			return nil, fmt.Errorf("xpg/topology/shard/resolver: time range %d: %w", index, err)
 		}
 
 		start := timeToUTC(valueRange.Start)
 		end := timeToUTC(valueRange.End)
 
 		if !start.Before(end) {
-			return nil, fmt.Errorf("xpg/shard/resolver: time range %d must satisfy start < end", index)
+			return nil, fmt.Errorf("xpg/topology/shard/resolver: time range %d must satisfy start < end", index)
 		}
 
 		resolved, ok := topology.Shard(valueRange.ShardID)
 		if !ok {
 			return nil, fmt.Errorf(
-				"xpg/shard/resolver: time range %d: %w",
+				"xpg/topology/shard/resolver: time range %d: %w",
 				index,
 				&shard.UnknownShardError{ShardID: valueRange.ShardID},
 			)
@@ -98,7 +98,7 @@ func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResol
 		// [00:00, 01:00) and [01:00, 02:00)
 		if previous.end.After(current.start) {
 			return nil, fmt.Errorf(
-				"xpg/shard/resolver: time ranges %d and %d overlap",
+				"xpg/topology/shard/resolver: time ranges %d and %d overlap",
 				previous.sourceIndex,
 				current.sourceIndex,
 			)
@@ -116,7 +116,7 @@ func NewTimeRange(topology *shard.Topology, ranges []TimeRange) (*TimeRangeResol
 // acquire a connection, or execute a PostgreSQL query.
 func (resolver *TimeRangeResolver) Resolve(key time.Time) (shard.Shard, error) {
 	if resolver == nil || len(resolver.ranges) == 0 {
-		return shard.Shard{}, errors.New("xpg/shard/resolver: time range resolver is not initialized")
+		return shard.Shard{}, errors.New("xpg/topology/shard/resolver: time range resolver is not initialized")
 	}
 
 	key = timeToUTC(key)

@@ -9,7 +9,7 @@ import (
 // shard. It returns that shard when all keys are colocated.
 func SameShard[K any](resolver Resolver[K], keys ...K) (Shard, error) {
 	if resolver == nil {
-		return Shard{}, errors.New("xpg/shard: resolver is nil")
+		return Shard{}, errors.New("xpg/topology/shard: resolver is nil")
 	}
 
 	if len(keys) == 0 {
@@ -18,7 +18,7 @@ func SameShard[K any](resolver Resolver[K], keys ...K) (Shard, error) {
 
 	expected, err := resolver.Resolve(keys[0])
 	if err != nil {
-		return Shard{}, fmt.Errorf("xpg/shard: resolve key 0: %w", err)
+		return Shard{}, fmt.Errorf("xpg/topology/shard: resolve key 0: %w", err)
 	}
 
 	expectedID := expected.ID()
@@ -26,7 +26,7 @@ func SameShard[K any](resolver Resolver[K], keys ...K) (Shard, error) {
 	for index := 1; index < len(keys); index++ {
 		actual, err := resolver.Resolve(keys[index])
 		if err != nil {
-			return Shard{}, fmt.Errorf("xpg/shard: resolve key %d: %w", index, err)
+			return Shard{}, fmt.Errorf("xpg/topology/shard: resolve key %d: %w", index, err)
 		}
 
 		actualID := actual.ID()
@@ -55,7 +55,7 @@ type Group[K any] struct {
 // shard's first appearance in the input.
 func GroupByShard[K any](resolver Resolver[K], keys []K) ([]Group[K], error) {
 	if resolver == nil {
-		return nil, errors.New("xpg/shard: resolver is nil")
+		return nil, errors.New("xpg/topology/shard: resolver is nil")
 	}
 
 	groups := make([]Group[K], 0)
@@ -64,7 +64,7 @@ func GroupByShard[K any](resolver Resolver[K], keys []K) ([]Group[K], error) {
 	for keyIndex, key := range keys {
 		resolved, err := resolver.Resolve(key)
 		if err != nil {
-			return nil, fmt.Errorf("xpg/shard: resolve key %d: %w", keyIndex, err)
+			return nil, fmt.Errorf("xpg/topology/shard: resolve key %d: %w", keyIndex, err)
 		}
 
 		id := resolved.ID()

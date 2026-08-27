@@ -24,7 +24,7 @@ type UnknownShardError struct {
 }
 
 func (e *UnknownShardError) Error() string {
-	return fmt.Sprintf("xpg/shard: unknown shard %q", e.ShardID)
+	return fmt.Sprintf("xpg/topology/shard: unknown shard %q", e.ShardID)
 }
 
 func (e *UnknownShardError) Unwrap() error {
@@ -41,7 +41,7 @@ type MismatchError struct {
 
 func (e *MismatchError) Error() string {
 	return fmt.Sprintf(
-		"xpg/shard: key %d resolved to shard %q instead of %q",
+		"xpg/topology/shard: key %d resolved to shard %q instead of %q",
 		e.Index,
 		e.Actual,
 		e.Expected,

@@ -44,15 +44,15 @@ func NewRendezvous[K any](
 	}
 
 	if encoder == nil {
-		return nil, errors.New("xpg/shard/resolver: key encoder is nil")
+		return nil, errors.New("xpg/topology/shard/resolver: key encoder is nil")
 	}
 
 	if namespace == "" {
-		return nil, errors.New("xpg/shard/resolver: rendezvous namespace must not be empty")
+		return nil, errors.New("xpg/topology/shard/resolver: rendezvous namespace must not be empty")
 	}
 
 	if uint64(len(namespace)) > uint64(math.MaxUint32) {
-		return nil, errors.New("xpg/shard/resolver: rendezvous namespace is too large")
+		return nil, errors.New("xpg/topology/shard/resolver: rendezvous namespace is too large")
 	}
 
 	shards := topology.Shards()
@@ -62,7 +62,7 @@ func NewRendezvous[K any](
 		id := candidate.ID()
 
 		if uint64(len(id)) > uint64(math.MaxUint32) {
-			return nil, errors.New("xpg/shard/resolver: shard ID is too large")
+			return nil, errors.New("xpg/topology/shard/resolver: shard ID is too large")
 		}
 
 		maxIDLength = max(maxIDLength, len(id))
@@ -94,16 +94,16 @@ func NewRendezvous[K any](
 // Resolve maps key to a shard using rendezvous hashing.
 func (resolver *RendezvousResolver[K]) Resolve(key K) (shard.Shard, error) {
 	if resolver == nil || len(resolver.shards) == 0 || resolver.encoder == nil {
-		return shard.Shard{}, errors.New("xpg/shard/resolver: rendezvous resolver is not initialized")
+		return shard.Shard{}, errors.New("xpg/topology/shard/resolver: rendezvous resolver is not initialized")
 	}
 
 	encoded, err := resolver.encoder.Encode(key)
 	if err != nil {
-		return shard.Shard{}, fmt.Errorf("xpg/shard/resolver: encode rendezvous key: %w", err)
+		return shard.Shard{}, fmt.Errorf("xpg/topology/shard/resolver: encode rendezvous key: %w", err)
 	}
 
 	if uint64(len(encoded)) > uint64(math.MaxUint32) {
-		return shard.Shard{}, errors.New("xpg/shard/resolver: encoded key is too large")
+		return shard.Shard{}, errors.New("xpg/topology/shard/resolver: encoded key is too large")
 	}
 
 	keyLengthOffset := len(resolver.prefix)

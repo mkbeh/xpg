@@ -8,7 +8,7 @@ import (
 
 func requireTopology(topology *shard.Topology) error {
 	if topology == nil || topology.Len() == 0 {
-		return errors.New("xpg/shard/resolver: topology is nil or empty")
+		return errors.New("xpg/topology/shard/resolver: topology is nil or empty")
 	}
 
 	return nil

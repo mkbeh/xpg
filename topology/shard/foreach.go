@@ -28,7 +28,7 @@ func (results ForEachShardResults) Err() error {
 		errs = append(
 			errs,
 			fmt.Errorf(
-				"xpg/shard: shard %q callback: %w",
+				"xpg/topology/shard: shard %q callback: %w",
 				result.ShardID,
 				result.Err,
 			),
@@ -51,15 +51,15 @@ func (t *Topology) ForEachShard(
 	fn func(context.Context, Shard) error,
 ) (ForEachShardResults, error) {
 	if t == nil || len(t.shards) == 0 {
-		return nil, errors.New("xpg/shard: topology is nil or empty")
+		return nil, errors.New("xpg/topology/shard: topology is nil or empty")
 	}
 
 	if concurrency <= 0 {
-		return nil, errors.New("xpg/shard: concurrency must be positive")
+		return nil, errors.New("xpg/topology/shard: concurrency must be positive")
 	}
 
 	if fn == nil {
-		return nil, errors.New("xpg/shard: callback is nil")
+		return nil, errors.New("xpg/topology/shard: callback is nil")
 	}
 
 	results := make(ForEachShardResults, len(t.shards))

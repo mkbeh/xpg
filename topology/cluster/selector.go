@@ -62,7 +62,7 @@ type ReplicaSelectorFunc func(context.Context, ReplicaSet) (int, error)
 // Select calls the wrapped selector function.
 func (selector ReplicaSelectorFunc) Select(ctx context.Context, replicas ReplicaSet) (int, error) {
 	if selector == nil {
-		return -1, errors.New("xpg/cluster: replica selector function is nil")
+		return -1, errors.New("xpg/topology/cluster: replica selector function is nil")
 	}
 
 	return selector(ctx, replicas)

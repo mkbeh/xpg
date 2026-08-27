@@ -26,7 +26,7 @@ func NewCustom[K any](topology *shard.Topology, resolve ResolveFunc[K]) (*Custom
 	}
 
 	if resolve == nil {
-		return nil, errors.New("xpg/shard/resolver: custom resolve function is nil")
+		return nil, errors.New("xpg/topology/shard/resolver: custom resolve function is nil")
 	}
 
 	return &CustomResolver[K]{
@@ -38,7 +38,7 @@ func NewCustom[K any](topology *shard.Topology, resolve ResolveFunc[K]) (*Custom
 // Resolve maps key to a shard and rejects IDs absent from the bound topology.
 func (resolver *CustomResolver[K]) Resolve(key K) (shard.Shard, error) {
 	if resolver == nil || resolver.topology == nil || resolver.resolve == nil {
-		return shard.Shard{}, errors.New("xpg/shard/resolver: custom resolver is not initialized")
+		return shard.Shard{}, errors.New("xpg/topology/shard/resolver: custom resolver is not initialized")
 	}
 
 	id, err := resolver.resolve(key)

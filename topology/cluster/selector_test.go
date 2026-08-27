@@ -91,7 +91,7 @@ func TestReplicaSelectorFuncNil(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if got, want := err.Error(), "xpg/cluster: replica selector function is nil"; got != want {
+	if got, want := err.Error(), "xpg/topology/cluster: replica selector function is nil"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
