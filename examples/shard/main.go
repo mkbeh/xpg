@@ -70,10 +70,7 @@ func run(ctx context.Context) error {
 
 		primary := targetShard.Primary()
 		if primary == nil {
-			return fmt.Errorf(
-				"shard %q has no primary",
-				targetShard.ID(),
-			)
+			return fmt.Errorf("shard %q has no primary", targetShard.ID())
 		}
 
 		if _, err := primary.Exec(

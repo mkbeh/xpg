@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/mkbeh/xpg"
 	"github.com/mkbeh/xpg/topology/cluster"
@@ -19,43 +20,54 @@ const (
 )
 
 func openTopology(ctx context.Context) (*shard.Topology, error) {
-	clusterA, err := openCluster(
-		ctx,
-		shardAID,
-		"shard.shard-a.primary",
-		environment(
-			"XPG_SHARD_A_DATABASE_URL",
-			defaultShardADatabaseURL,
-		),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("open shard-a cluster: %w", err)
+	type clusterConfig struct {
+		id          cluster.ID
+		name        string
+		databaseURL string
 	}
 
-	clusterB, err := openCluster(
-		ctx,
-		shardBID,
-		"shard.shard-b.primary",
-		environment(
-			"XPG_SHARD_B_DATABASE_URL",
-			defaultShardBDatabaseURL,
-		),
-	)
-	if err != nil {
-		clusterA.Close()
-
-		return nil, fmt.Errorf("open shard-b cluster: %w", err)
+	configs := []clusterConfig{
+		{
+			id:   shardAID,
+			name: "shard.shard-a.primary",
+			databaseURL: environment(
+				"XPG_SHARD_A_DATABASE_URL",
+				defaultShardADatabaseURL,
+			),
+		},
+		{
+			id:   shardBID,
+			name: "shard.shard-b.primary",
+			databaseURL: environment(
+				"XPG_SHARD_B_DATABASE_URL",
+				defaultShardBDatabaseURL,
+			),
+		},
 	}
 
-	// After NewTopology succeeds, the topology owns both clusters and closes
+	clusters := make([]*cluster.Cluster, 0, len(configs))
+
+	for _, config := range configs {
+		dbCluster, err := openCluster(
+			ctx,
+			config.id,
+			config.name,
+			config.databaseURL,
+		)
+		if err != nil {
+			closeClusters(clusters)
+
+			return nil, fmt.Errorf("open %s cluster: %w", config.id, err)
+		}
+
+		clusters = append(clusters, dbCluster)
+	}
+
+	// After NewTopology succeeds, the topology owns all clusters and closes
 	// them through Topology.Close. On constructor failure ownership remains here.
-	topology, err := shard.NewTopology(
-		clusterA,
-		clusterB,
-	)
+	topology, err := shard.NewTopology(clusters...)
 	if err != nil {
-		clusterB.Close()
-		clusterA.Close()
+		closeClusters(clusters)
 
 		return nil, fmt.Errorf("create topology: %w", err)
 	}
@@ -97,6 +109,12 @@ func openCluster(
 	}
 
 	return dbCluster, nil
+}
+
+func closeClusters(clusters []*cluster.Cluster) {
+	for _, cluster := range slices.Backward(clusters) {
+		cluster.Close()
+	}
 }
 
 func environment(name, fallback string) string {
