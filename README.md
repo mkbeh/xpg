@@ -26,10 +26,10 @@ connection management, routing, and common production workflows.
 * **Error Classification:** Classification of PostgreSQL constraint, transaction, cancellation, connection, and other
   common database errors.
 * **Advisory Locking:** Transaction-level advisory locks for coordinating concurrent database operations.
-* **Primary/Replica Routing:** Explicit read policies, replica selection, primary fallback, and read-only transactions
-  across PostgreSQL nodes.
-* **Application-Level Sharding:** Hash, range, time-based, and custom routing with colocation checks, key grouping, and
-  bounded parallel operations across shards.
+* **Primary/Replica Routing:** Logical cluster topologies with explicit read policies, replica selection, primary
+  fallback, and read-only transactions across PostgreSQL nodes.
+* **Application-Level Sharding:** Rendezvous, range, time-based, and custom routing with colocation checks, key
+  grouping, and bounded parallel operations across shards.
 * **Observability:** Structured logging, tracing, pool statistics, and optional OpenTelemetry metrics.
 
 ## Installation
@@ -132,7 +132,7 @@ serialization failures, deadlocks, lock errors, query cancellation, and connecti
 
 ## Clustering
 
-`xpg` groups primary and replica pools into a logical cluster with explicit read routing.
+The `topology/cluster` package groups primary and replica pools into a logical cluster with explicit read routing.
 
 <!-- @formatter:off -->
 ```go
@@ -173,61 +173,60 @@ replica is available. Replica selection is round-robin by default and can be cus
 
 ## Sharding
 
-`xpg` provides application-level sharding with explicit key routing across an immutable shard topology.
+The `topology/shard` package provides application-level sharding with explicit key routing across an immutable shard
+topology. Routing strategies live under `topology/shard/resolver`.
 
 <!-- @formatter:off -->
 ```go
-topology, err := shard.NewTopology([]shard.Config{
-    {Cluster: shardA},
-    {Cluster: shardB},
-})
+topology, err := shard.NewTopology(shardA, shardB)
 if err != nil {
-    panic(err)
+	panic(err)
 }
 defer topology.Close()
 
 // Partition user IDs into shard ranges.
 users, err := resolver.NewRange(
-    topology,
-    []resolver.Range[uint64]{
-        {Start: 0, End: 100, ShardID: "shard-a"},
-        {Start: 100, End: 200, ShardID: "shard-b"},
-    },
+	topology,
+	[]resolver.Range[uint64]{
+		{Start: 0, End: 100, ShardID: "shard-a"},
+		{Start: 100, End: 200, ShardID: "shard-b"},
+	},
 )
 if err != nil {
-    panic(err)
+	panic(err)
 }
 
 // Resolve the target shard.
-shard, err := users.Resolve(userID)
+targetShard, err := users.Resolve(userID)
 if err != nil {
-    panic(err)
+	panic(err)
 }
 
 // Write to the shard primary.
-primaryPool := shard.Primary()
+primaryPool := targetShard.Primary()
 
 _, err = primaryPool.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
 if err != nil {
-    panic(err)
+	panic(err)
 }
 
 // Read from the same shard using the selected read policy.
-readPool, err := shard.ReadPool(ctx, cluster.ReadReplicaPreferred)
+readPool, err := targetShard.ReadPool(ctx, cluster.ReadReplicaPreferred)
 if err != nil {
-    panic(err)
+	panic(err)
 }
 
 var active bool
 err = readPool.QueryRow(ctx, "SELECT active FROM users WHERE id = $1", userID).Scan(&active)
 if err != nil {
-    panic(err)
+	panic(err)
 }
+
 ```
 <!-- @formatter:on -->
 
 Built-in routing strategies include rendezvous hashing, ordered ranges, time ranges, and custom resolvers. Sharding
-utilities cover key colocation, grouping by shard, and parallel operations across shards.
+utilities cover key colocation, grouping by shard, and bounded parallel operations across shards.
 
 ## Examples
 
