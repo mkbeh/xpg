@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.4.0
+
+This release expands multi-key sharding with tolerant partitioning and improves the documentation and examples for batch
+routing across shard topologies.
+
+### Added
+
+* **Tolerant Shard Partitioning:** Added `PartitionByShard` and `Partition[K]` for grouping routable keys by shard while
+  collecting keys that resolve to `ErrNoShard` separately. Other resolver errors continue to abort the operation.
+* **Multi-Key Sharding Example:** Added the runnable `shard_group` example covering colocation checks, strict grouping,
+  tolerant partitioning, and per-shard batch operations.
+
+### Changed
+
+* **Sharding Documentation:** Expanded the root README with resolver strategy guidance, multi-key routing patterns, and
+  bounded parallel fan-out operations.
+
+---
+
 ## v0.3.0
 
 This release reorganizes the cluster and shard APIs under a common topology namespace and simplifies several sharding

@@ -4,7 +4,6 @@ This example shows how to distribute application data across PostgreSQL shards:
 
 * Route user IDs with a range-based shard resolver
 * Write records to the resolved shard
-* Group keys by shard for efficient batch processing
 
 The example uses two primary-only shards:
 
@@ -82,14 +81,7 @@ go run ./examples/shard
 range routing:
 - user_id=42 shard=shard-a pool=shard.shard-a.primary
 - user_id=142 shard=shard-b pool=shard.shard-b.primary
-
-grouping:
-- shard=shard-b user_ids=[142 143]
-- shard=shard-a user_ids=[42 43]
 ```
-
-`GroupByShard` preserves the order in which shards first appear in the input and the relative order of keys within each
-group.
 
 ## Cleanup
 

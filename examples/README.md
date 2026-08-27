@@ -9,7 +9,8 @@ This directory contains runnable examples covering the main `xpg` usage patterns
 | [`advisory`](advisory)           | Coordinating concurrent work with transaction-level advisory locks          |
 | [`observability`](observability) | `slog` logging, OpenTelemetry tracing, and Prometheus pool metrics          |
 | [`cluster`](cluster)             | Primary and replica routing, round-robin reads, and read-only transactions  |
-| [`shard`](shard)                 | Range-based shard routing and grouping keys by shard                        |
+| [`shard`](shard)                 | Range-based shard routing and shard-local reads and writes                   |
+| [`shard_group`](shard_group)     | Multi-key colocation checks and per-shard batch operations                   |
 | [`shard_geo`](shard_geo)         | Custom geographic routing built from shard metadata                         |
 
 ## Running the examples

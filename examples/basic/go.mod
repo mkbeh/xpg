@@ -2,7 +2,7 @@ module basic
 
 go 1.27
 
-require github.com/mkbeh/xpg v0.2.0
+require github.com/mkbeh/xpg v0.3.0
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

@@ -26,8 +26,8 @@ github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJn
 github.com/klauspost/compress v1.19.1/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
-github.com/mkbeh/xpg v0.2.0 h1:DpTS0lZdq8O69XpEbq+PR3DzfiYv6xiu288154ZqnWA=
-github.com/mkbeh/xpg v0.2.0/go.mod h1:JSPNYTitoLdBDN5v1ptxdv70/kXwaSiDI0BSSIScBf4=
+github.com/mkbeh/xpg v0.3.0 h1:FjKvD8dFxO0DPcgjgkJa09mvihpa6NgcHAtB3BqfkuE=
+github.com/mkbeh/xpg v0.3.0/go.mod h1:JSPNYTitoLdBDN5v1ptxdv70/kXwaSiDI0BSSIScBf4=
 github.com/mkbeh/xpg/extra/otelxpg v0.1.0 h1:y+nOdj1Gt0aaVX5sIB5u+EcJtgUSJ0ktL5Ve6uzevwk=
 github.com/mkbeh/xpg/extra/otelxpg v0.1.0/go.mod h1:j+jT8OhO5rjvCbHfgTIKhrFFb29MRSi6F36Jn3gy6EY=
 github.com/mkbeh/xpg/extra/slogxpg v0.1.0 h1:JcMHULjL8UPoe9fIUM4A+eXUXyS/tt+3FZ7CTpgCrB4=

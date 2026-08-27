@@ -1,4 +1,4 @@
-module shard_geo
+module shard_group
 
 go 1.27
 
