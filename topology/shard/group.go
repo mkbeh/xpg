@@ -3,8 +3,6 @@ package shard
 import (
 	"errors"
 	"fmt"
-
-	"github.com/mkbeh/xpg/cluster"
 )
 
 // SameShard resolves the keys and verifies that they all belong to the same
@@ -61,7 +59,7 @@ func GroupByShard[K any](resolver Resolver[K], keys []K) ([]Group[K], error) {
 	}
 
 	groups := make([]Group[K], 0)
-	indexByID := make(map[cluster.ID]int)
+	indexByID := make(map[ID]int)
 
 	for keyIndex, key := range keys {
 		resolved, err := resolver.Resolve(key)

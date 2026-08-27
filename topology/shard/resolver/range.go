@@ -7,8 +7,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 // Range maps the bounded half-open interval [Start, End) to one shard.
@@ -18,7 +17,7 @@ import (
 type Range[K cmp.Ordered] struct {
 	Start   K
 	End     K
-	ShardID cluster.ID
+	ShardID shard.ID
 }
 
 // RangeResolver resolves ordered keys through bounded, non-overlapping ranges.

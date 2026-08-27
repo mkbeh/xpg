@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mkbeh/xpg/shard"
-	"github.com/mkbeh/xpg/shard/resolver"
+	"github.com/mkbeh/xpg/topology/shard"
+	"github.com/mkbeh/xpg/topology/shard/resolver"
 )
 
 const (

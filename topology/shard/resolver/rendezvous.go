@@ -8,8 +8,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 const (
@@ -126,7 +125,7 @@ func (resolver *RendezvousResolver[K]) Resolve(key K) (shard.Shard, error) {
 	var (
 		selected shard.Shard
 		best     [sha256.Size]byte
-		bestID   cluster.ID
+		bestID   shard.ID
 		hasBest  bool
 	)
 

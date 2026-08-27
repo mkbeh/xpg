@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/mkbeh/xpg"
-	"github.com/mkbeh/xpg/cluster"
+	"github.com/mkbeh/xpg/topology/cluster"
 )
 
 const (

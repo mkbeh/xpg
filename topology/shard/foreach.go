@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-
-	"github.com/mkbeh/xpg/cluster"
 )
 
 // ForEachShardResult contains the result of one shard callback invocation.
 type ForEachShardResult struct {
-	ShardID cluster.ID
+	ShardID ID
 	Err     error
 }
 

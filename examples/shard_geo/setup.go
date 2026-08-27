@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/mkbeh/xpg"
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/cluster"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 const (
@@ -49,10 +49,10 @@ func openTopology(ctx context.Context) (*shard.Topology, error) {
 		return nil, fmt.Errorf("open shard-us: %w", err)
 	}
 
-	topology, err := shard.NewTopology([]shard.Config{
-		{Cluster: shardEU},
-		{Cluster: shardUS},
-	})
+	topology, err := shard.NewTopology(
+		shardEU,
+		shardUS,
+	)
 	if err != nil {
 		shardUS.Close()
 		shardEU.Close()

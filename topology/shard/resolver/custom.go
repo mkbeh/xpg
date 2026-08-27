@@ -3,8 +3,7 @@ package resolver
 import (
 	"errors"
 
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 // ResolveFunc maps an application key to a shard ID.
@@ -12,7 +11,7 @@ import (
 // Resolve functions should return shard.ErrNoShard when a key cannot be mapped
 // to a shard. Implementations shared by concurrent callers must be deterministic
 // and concurrency-safe. They should not perform hidden I/O.
-type ResolveFunc[K any] func(key K) (cluster.ID, error)
+type ResolveFunc[K any] func(key K) (shard.ID, error)
 
 // CustomResolver adapts ResolveFunc to shard.Resolver.
 type CustomResolver[K any] struct {

@@ -7,8 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 // TimeRange maps the bounded half-open interval [Start, End) to one shard.
@@ -18,7 +17,7 @@ import (
 type TimeRange struct {
 	Start   time.Time
 	End     time.Time
-	ShardID cluster.ID
+	ShardID shard.ID
 }
 
 // TimeRangeResolver resolves time instants through bounded, non-overlapping

@@ -3,26 +3,24 @@ package shard
 import (
 	"errors"
 	"fmt"
-
-	"github.com/mkbeh/xpg/cluster"
 )
 
 var (
 	// ErrNoShard indicates that a resolver could not map a key to any shard.
-	ErrNoShard = errors.New("xpg/shard: no shard resolved")
+	ErrNoShard = errors.New("xpg/topology/shard: no shard resolved")
 
 	// ErrUnknownShard indicates that routing configuration or custom routing
 	// logic referenced a shard that does not exist in the topology.
-	ErrUnknownShard = errors.New("xpg/shard: unknown shard")
+	ErrUnknownShard = errors.New("xpg/topology/shard: unknown shard")
 
 	// ErrShardMismatch indicates that keys expected to be colocated resolved to
 	// different shards.
-	ErrShardMismatch = errors.New("xpg/shard: keys resolve to different shards")
+	ErrShardMismatch = errors.New("xpg/topology/shard: keys resolve to different shards")
 )
 
 // UnknownShardError identifies a shard that does not exist in a topology.
 type UnknownShardError struct {
-	ShardID cluster.ID
+	ShardID ID
 }
 
 func (e *UnknownShardError) Error() string {
@@ -36,8 +34,8 @@ func (e *UnknownShardError) Unwrap() error {
 // MismatchError describes the first key that resolved to a different shard
 // than the first key.
 type MismatchError struct {
-	Expected cluster.ID
-	Actual   cluster.ID
+	Expected ID
+	Actual   ID
 	Index    int
 }
 

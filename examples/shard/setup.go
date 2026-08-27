@@ -6,16 +6,16 @@ import (
 	"os"
 
 	"github.com/mkbeh/xpg"
-	"github.com/mkbeh/xpg/cluster"
-	"github.com/mkbeh/xpg/shard"
+	"github.com/mkbeh/xpg/topology/cluster"
+	"github.com/mkbeh/xpg/topology/shard"
 )
 
 const (
 	defaultShardADatabaseURL = "postgres://postgres:postgres@localhost:56431/postgres?sslmode=disable"
 	defaultShardBDatabaseURL = "postgres://postgres:postgres@localhost:56432/postgres?sslmode=disable"
 
-	shardAID cluster.ID = "shard-a"
-	shardBID cluster.ID = "shard-b"
+	shardAID shard.ID = "shard-a"
+	shardBID shard.ID = "shard-b"
 )
 
 func openTopology(ctx context.Context) (*shard.Topology, error) {
@@ -65,7 +65,7 @@ func openTopology(ctx context.Context) (*shard.Topology, error) {
 
 func openCluster(
 	ctx context.Context,
-	id cluster.ID,
+	id shard.ID,
 	name string,
 	databaseURL string,
 ) (*cluster.Cluster, error) {

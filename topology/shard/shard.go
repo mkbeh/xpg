@@ -5,8 +5,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/mkbeh/xpg"
-	"github.com/mkbeh/xpg/cluster"
+	"github.com/mkbeh/xpg/topology/cluster"
 )
+
+// ID identifies one logical shard.
+//
+// ID is an alias of cluster.ID because a shard inherits the stable identity of
+// its underlying cluster.
+type ID = cluster.ID
 
 // Shard is an immutable, restricted view of one Cluster registered in a
 // Topology.
@@ -20,7 +26,7 @@ type Shard struct {
 }
 
 // ID returns the stable logical shard ID inherited from the underlying Cluster.
-func (s Shard) ID() cluster.ID {
+func (s Shard) ID() ID {
 	if s.cluster == nil {
 		return ""
 	}

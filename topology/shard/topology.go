@@ -6,7 +6,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/mkbeh/xpg/cluster"
+	"github.com/mkbeh/xpg/topology/cluster"
 )
 
 // Topology is an immutable ordered set of logical shards.
@@ -15,7 +15,7 @@ import (
 // successfully. Close closes every owned cluster exactly once.
 type Topology struct {
 	shards     []Shard
-	shardsByID map[cluster.ID]Shard
+	shardsByID map[ID]Shard
 
 	closeOnce sync.Once
 }
@@ -28,7 +28,7 @@ func NewTopology(clusters ...*cluster.Cluster) (*Topology, error) {
 	}
 
 	shards := make([]Shard, len(clusters))
-	shardsByID := make(map[cluster.ID]Shard, len(clusters))
+	shardsByID := make(map[ID]Shard, len(clusters))
 
 	for index, candidate := range clusters {
 		if candidate == nil {
@@ -80,7 +80,7 @@ func (t *Topology) Shards() []Shard {
 }
 
 // Shard returns one shard by stable cluster ID.
-func (t *Topology) Shard(id cluster.ID) (Shard, bool) {
+func (t *Topology) Shard(id ID) (Shard, bool) {
 	if t == nil {
 		return Shard{}, false
 	}
