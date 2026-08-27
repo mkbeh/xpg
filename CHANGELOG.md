@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.3.0
+
+This release reorganizes the cluster and shard APIs under a common topology namespace and simplifies several sharding
+contracts.
+
+### Changed
+
+* **Topology Package Layout:** Moved cluster and shard packages to `topology/cluster` and `topology/shard`, with shard
+  resolvers under `topology/shard/resolver`.
+* **Cluster Identity:** Cluster IDs are now required when creating a `cluster.Cluster`.
+* **Shard Topology Construction:** Simplified topology creation from `shard.NewTopology([]shard.Config{...})` to
+  `shard.NewTopology(clusters...)`.
+* **Rendezvous Resolver:** Renamed `HashResolver` and `NewHash` to `RendezvousResolver` and `NewRendezvous`, making the
+  routing algorithm explicit while preserving the existing rendezvous placement contract.
+* **Custom Resolvers:** Simplified custom resolver callbacks to map a key directly to `shard.ID` without receiving the
+  topology on every call.
+* **Cross-Shard Operations:** `ForEachShard` now returns callback and cancellation failures through its function error
+  while preserving detailed per-shard results.
+
+### Fixed
+
+* **Rendezvous Portability:** Fixed length validation in rendezvous routing so the resolver also compiles correctly on
+  32-bit architectures.
+
+### Removed
+
+* **Shard Configuration Layer:** Removed `shard.Config`; shard topologies are now created directly from clusters.
+* **Generic Hash API:** Removed the `HashResolver` and `NewHash` names in favor of the explicit rendezvous API.
+
+---
+
 ## v0.2.0
 
 Initial production release of `xpg`, built around `pgx` with PostgreSQL transaction helpers, primary/replica clustering,
