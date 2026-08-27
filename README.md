@@ -171,7 +171,6 @@ Cluster transactions combine explicit primary/replica routing with the native `p
 `InPrimaryTx` runs the transaction on the cluster primary and is intended for atomic multi-step writes.
 
 <!-- @formatter:off -->
-
 ```go
 err := wallets.InPrimaryTx(
     ctx,
@@ -204,7 +203,6 @@ err := wallets.InPrimaryTx(
     },
 )
 ```
-
 <!-- @formatter:on -->
 
 The transaction commits on `nil` and rolls back on error.
@@ -215,7 +213,6 @@ The transaction commits on `nil` and rolls back on error.
 for read workloads that can run on replicas.
 
 <!-- @formatter:off -->
-
 ```go
 var (
     totalWallets int64
@@ -242,7 +239,6 @@ err := wallets.InReadTx(
     },
 )
 ```
-
 <!-- @formatter:on -->
 
 #### Read Routing Policies
@@ -264,28 +260,22 @@ topology. Routing strategies live under `topology/shard/resolver`.
 
 <!-- @formatter:off -->
 ```go
-topology, err := shard.NewTopology(clusterA, ClusterB)
+topology, err := shard.NewTopology(clusterA, clusterB)
 if err != nil {
-	panic(err)
+    panic(err)
 }
 defer topology.Close()
 
-// Partition user IDs into shard ranges.
-users, err := resolver.NewRange(
-	topology,
-	[]resolver.Range[uint64]{
-		{Start: 0, End: 100, ShardID: "shard-a"},
-		{Start: 100, End: 200, ShardID: "shard-b"},
-	},
-)
+// Route user IDs using rendezvous hashing.
+userResolver, err := resolver.NewRendezvous(topology, "users", resolver.Uint64KeyEncoder())
 if err != nil {
-	panic(err)
+    panic(err)
 }
 
 // Resolve the target shard.
-targetShard, err := users.Resolve(userID)
+targetShard, err := userResolver.Resolve(userID)
 if err != nil {
-	panic(err)
+    panic(err)
 }
 
 // Write to the shard primary.
@@ -293,26 +283,230 @@ primaryPool := targetShard.Primary()
 
 _, err = primaryPool.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
 if err != nil {
-	panic(err)
+    panic(err)
 }
 
 // Read from the same shard using the selected read policy.
 readPool, err := targetShard.ReadPool(ctx, cluster.ReadReplicaPreferred)
 if err != nil {
-	panic(err)
+    panic(err)
 }
 
 var active bool
 err = readPool.QueryRow(ctx, "SELECT active FROM users WHERE id = $1", userID).Scan(&active)
 if err != nil {
-	panic(err)
+    panic(err)
 }
-
 ```
 <!-- @formatter:on -->
 
-Built-in routing strategies include rendezvous hashing, ordered ranges, time ranges, and custom resolvers. Sharding
-utilities cover key colocation, grouping by shard, and bounded parallel operations across shards.
+Resolvers support multiple placement strategies, while shard utilities provide colocation checks, strict grouping,
+tolerant partitioning, and bounded parallel operations across shards.
+
+### Routing Strategies
+
+Resolvers bind a data-placement strategy to an immutable shard topology. Every resolver exposes the same routing
+contract, allowing application code to resolve keys independently of the selected strategy.
+
+| Resolver             | Best Suited For                       | Routing Model                                                         |
+|:---------------------|:--------------------------------------|:----------------------------------------------------------------------|
+| `RendezvousResolver` | Keys without natural ranges           | Deterministic Highest Random Weight (HRW) hashing within a namespace. |
+| `RangeResolver`      | Ordered numeric or string keys        | Bounded, non-overlapping half-open intervals `[Start, End)`.          |
+| `TimeRangeResolver`  | Time-series or partitioned event data | Bounded chronological intervals normalized to UTC.                    |
+| `CustomResolver`     | Domain-specific placement rules       | Application-defined mapping from a key to `shard.ID`.                 |
+
+<!-- @formatter:off -->
+```go
+// Rendezvous hashing distributes arbitrary keys deterministically across the topology.
+usersByHash, _ := resolver.NewRendezvous(topology, "users", resolver.Uint64KeyEncoder())
+
+// Ordered ranges provide explicit control over the keyspace.
+usersByRange, _ := resolver.NewRange(topology, []resolver.Range[uint64]{
+    {Start: 0,   End: 100, ShardID: "shard-a"},
+    {Start: 100, End: 200, ShardID: "shard-b"},
+})
+
+// Time ranges route records through bounded chronological intervals.
+t0, _ := time.Parse(time.RFC3339, "2026-01-01T00:00:00Z")
+t1 := t0.AddDate(0, 1, 0)
+t2 := t0.AddDate(0, 2, 0)
+
+eventsByTime, _ := resolver.NewTimeRange(topology, []resolver.TimeRange{
+    {Start: t0, End: t1, ShardID: "shard-a"},
+    {Start: t1, End: t2, ShardID: "shard-b"},
+})
+
+// Custom routing keeps domain-specific placement rules in application code.
+tenantsByRegion, _ := resolver.NewCustom(topology, func(region string) (shard.ID, error) {
+    switch region {
+    case "eu":
+        return "shard-a", nil
+    case "us":
+        return "shard-b", nil
+    default:
+        return "", shard.ErrNoShard
+    }
+})
+```
+<!-- @formatter:on -->
+
+Regardless of the selected strategy, routing uses the same `Resolve` contract:
+
+<!-- @formatter:off -->
+```go
+targetShard, err := usersByHash.Resolve(userID)
+if err != nil {
+    panic(err)
+}
+
+log.Printf("resolved shard: %s", targetShard.ID())
+```
+<!-- @formatter:on -->
+
+Range and time-range resolvers may contain intentional gaps in the configured keyspace; keys that do not match any range
+return `ErrNoShard`. Custom resolvers can return the same error when a domain key has no valid destination.
+
+> [!IMPORTANT]
+> For rendezvous routing, the namespace, key encoding, and stable shard IDs are part of the placement contract.
+
+### Multi-Key Routing
+
+For complex batch operations, `xpg` provides routing primitives to analyze, group, and partition multi-key workloads
+across a shard topology.
+
+<!-- @formatter:off -->
+```go
+// Add range-based routing over the same shard topology.
+rangeResolver, _ := resolver.NewRange(topology, []resolver.Range[uint64]{
+    {Start: 0,   End: 100, ShardID: "shard-a"},
+    {Start: 100, End: 200, ShardID: "shard-b"},
+})
+```
+<!-- @formatter:on -->
+
+#### Strict Colocation Checks
+
+Use `SameShard` to guarantee that a set of keys resolves to the same shard before executing a shard-local transaction or
+another operation that must remain colocated.
+
+<!-- @formatter:off -->
+```go
+// Verify that all keys resolve to the same shard.
+targetShard, err := shard.SameShard(rangeResolver, 42, 43)
+if err != nil {
+    panic(err)
+}
+
+// Use the resolved shard for a shard-local operation.
+log.Printf("resolved shard: %s", targetShard.ID())
+```
+<!-- @formatter:on -->
+
+#### Strict Batch Grouping
+
+`GroupByShard` groups a slice of keys by destination shard. It uses strict routing semantics and fails if any key cannot
+be resolved.
+
+<!-- @formatter:off -->
+```go
+keys := []uint64{42, 142, 43, 143}
+
+groups, err := shard.GroupByShard(rangeResolver, keys)
+if err != nil {
+    panic(err) // Fails if any key cannot be resolved.
+}
+
+for _, group := range groups {
+    // Execute one shard-local batch update for each resolved group.
+    _ = group.Shard.InPrimaryTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
+        const query = `
+            UPDATE users
+            SET active = true
+            WHERE id = ANY($1)
+        `
+
+        _, err := tx.Exec(ctx, query, group.Keys)
+
+        return err
+    })
+}
+```
+<!-- @formatter:on -->
+
+#### Tolerant Partitioning
+
+`PartitionByShard` provides a relaxed alternative to strict grouping. Routable keys are grouped by shard, while keys
+that do not resolve to any shard are collected separately.
+
+<!-- @formatter:off -->
+```go
+keys := []uint64{42, 142, 250, 43, 143} // 250 falls outside the configured ranges.
+
+partition, err := shard.PartitionByShard(rangeResolver, keys)
+if err != nil {
+    panic(err) // Resolver errors other than ErrNoShard still abort the operation.
+}
+
+// Process all routable groups.
+for _, group := range partition.Groups {
+    log.Printf("process shard=%s user_ids=%v", group.Shard.ID(), group.Keys)
+}
+
+// Handle unresolved keys separately.
+if len(partition.Unresolved) != 0 {
+    log.Printf("unresolved keys: %v", partition.Unresolved)
+}
+```
+<!-- @formatter:on -->
+
+### Parallel Fan-Out Operations
+
+`ForEachShard` executes an operation across the entire topology with bounded concurrency. `maxConcurrency` controls how
+many shard callbacks may run at the same time; setting it to `1` makes execution sequential.
+
+<!-- @formatter:off -->
+```go
+timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+defer cancel()
+
+const maxConcurrency = 4
+
+expiredBefore := time.Now()
+
+results, err := topology.ForEachShard(
+    timeoutCtx,
+    maxConcurrency,
+    func(ctx context.Context, s shard.Shard) error {
+        primary := s.Primary()
+        if primary == nil {
+            return cluster.ErrNoPrimary
+        }
+
+        const query = `
+            DELETE FROM sessions
+            WHERE expired_at < $1
+        `
+
+        _, err := primary.Exec(ctx, query, expiredBefore)
+
+        return err
+    },
+)
+if err != nil {
+    log.Printf("fan-out completed with errors: %v", err)
+}
+
+// Inspect individual shard failures when detailed handling is required.
+for _, result := range results {
+    if result.Err != nil {
+        log.Printf("shard=%s failed: %v", result.ShardID, result.Err)
+    }
+}
+```
+<!-- @formatter:on -->
+
+Results preserve topology registration order and retain individual shard failures, while the returned error aggregates
+callback and context cancellation errors.
 
 ## Examples
 
