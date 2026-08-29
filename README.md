@@ -19,13 +19,11 @@ connection management, routing, and common production workflows.
 
 ## Features
 
-* **Pool Lifecycle Management:** Thin pool management on top of `pgx` with direct access to the underlying PostgreSQL
-  client.
-* **Transactions and Savepoints:** Managed transactions, savepoints, and helpers for common multi-step transactional
-  workflows.
-* **Error Classification:** Classification of PostgreSQL constraint, transaction, cancellation, connection, and other
-  common database errors.
+* **Pool Management:** Thin pool management over `pgx` with direct access to the underlying client.
+* **Transactions and Savepoints:** Managed transactions and savepoints for multi-step workflows.
 * **Advisory Locking:** Transaction-level advisory locks for coordinating concurrent database operations.
+* **Error Classification:** Semantic helpers for PostgreSQL constraints, transaction failures, cancellation, connection
+  errors, and SQLSTATE inspection.
 * **Primary/Replica Routing:** Logical cluster topologies with explicit read policies, replica selection, primary
   fallback, and read-only transactions across PostgreSQL nodes.
 * **Application-Level Sharding:** Rendezvous, range, time-based, and custom routing with colocation checks, key
@@ -48,80 +46,94 @@ go get github.com/mkbeh/xpg/extra/otelxpg
 
 ## Usage
 
-Open an `xpg` pool and execute a PostgreSQL query:
+Open an `xpg` pool and execute PostgreSQL queries using the familiar `pgx` query API.
 
 <!-- @formatter:off -->
+
 ```go
-// urlExample := "postgres://username:password@localhost:5432/database_name"
 pool, err := xpg.Open(
-	context.Background(),
-	os.Getenv("DATABASE_URL"),
-	xpg.WithName("example-pool"),
+    ctx,
+    os.Getenv("DATABASE_URL"),
+    xpg.WithName("example-pool"),
 )
 if err != nil {
-	log.Fatalf("failed to open pool: %v", err)
+    return fmt.Errorf("open pool: %w", err)
 }
 defer pool.Close()
 
 var message string
-err = pool.QueryRow(context.Background(), "SELECT 'hello from xpg'").Scan(&message)
+err = pool.QueryRow(ctx, "SELECT 'hello from xpg'").Scan(&message)
 if err != nil {
-	log.Fatalf("query failed: %v", err)
+    return fmt.Errorf("query: %w", err)
 }
 
-fmt.Println(message) // Outputs: hello from xpg
+fmt.Println(message) // hello from xpg
 ```
+
 <!-- @formatter:on -->
 
-`xpg` provides managed transactions using the native `pgx` transaction API. Returning `nil` commits the transaction;
-returning an error rolls it back.
+### Managed Transactions
+
+`xpg` manages the transaction lifecycle while preserving the native `pgx.Tx` API. Returning `nil` commits the
+transaction; returning an error rolls it back.
 
 <!-- @formatter:off -->
+
 ```go
 err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
-	_, err := tx.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
-	return err
+    _, err := tx.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
+    return err
 })
 ```
+
 <!-- @formatter:on -->
 
-Savepoints can isolate optional work without aborting the outer transaction.
+Savepoints can isolate optional transactional work without aborting the outer transaction.
+
+### Advisory Locks
 
 Transaction-level PostgreSQL advisory locks can coordinate concurrent work across application instances using the same
 database. The lock is held for the lifetime of the transaction and released automatically on commit or rollback.
 
 <!-- @formatter:off -->
+
 ```go
 err := pool.InTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
-	if err := xpg.AdvisoryXactLock(ctx, tx, lockID); err != nil {
-		return err
-	}
+    // Acquire a transaction-scoped advisory lock before updating the user.
+    if err := xpg.AdvisoryXactLock(ctx, tx, lockID); err != nil {
+        return err
+    }
 
-	_, err := tx.Exec(ctx, "UPDATE jobs SET status = 'running' WHERE id = $1", jobID)
-	return err
+    _, err := tx.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
+    return err
 })
 ```
+
 <!-- @formatter:on -->
 
-For error handling, `xpg` provides semantic helpers for classifying PostgreSQL failures and inspecting SQLSTATE codes
-without manual string matching.
+### Error Handling
+
+`xpg` provides semantic helpers for classifying PostgreSQL errors and inspecting SQLSTATE codes without manual string
+matching.
 
 <!-- @formatter:off -->
+
 ```go
-_, err := pool.Exec(ctx, "INSERT INTO users (id, email) VALUES ($1, $2)", userID, email)
+_, err := pool.Exec(ctx, "INSERT INTO users (email) VALUES ($1)", email)
 
 switch {
 case xpg.IsUniqueViolation(err):
     // Handle duplicate data.
 case xpg.IsRetryableTransaction(err):
-    // Retry the transaction when the operation is safe to replay.
+    // Retry when the operation is safe to replay.
 case err != nil:
     return err
 }
 ```
+
 <!-- @formatter:on -->
 
-The underlying SQLSTATE code is available through `xpg.SQLState(err)`. Helpers cover constraint violations,
+The underlying SQLSTATE code is available through `xpg.SQLState(err)`. Built-in helpers cover constraint violations,
 serialization failures, deadlocks, lock errors, query cancellation, and connection failures.
 
 ## Clustering
@@ -129,119 +141,84 @@ serialization failures, deadlocks, lock errors, query cancellation, and connecti
 The `topology/cluster` package groups primary and replica pools into a logical cluster with explicit read routing.
 
 <!-- @formatter:off -->
+
 ```go
-wallets, err := cluster.New(cluster.Config{
-	ID:       "wallets",
-	Primary:  primary,
-	Replicas: []*xpg.Pool{replicaA, replicaB},
+users, err := cluster.New(cluster.Config{
+    ID:       "users",
+    Primary:  pool1,
+    Replicas: []*xpg.Pool{pool2, pool3},
 })
 if err != nil {
-	panic(err)
+    return fmt.Errorf("initialize cluster: %w", err)
 }
-defer wallets.Close()
+defer users.Close()
 
 // Route writes explicitly to the primary.
-primaryPool := wallets.Primary()
+writer := users.Primary()
 
-_, err = primaryPool.Exec(ctx, "UPDATE wallets SET frozen = true WHERE id = $1", walletID)
+_, err = writer.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
 if err != nil {
-	panic(err)
+    return err
 }
 
 // Route reads according to the selected policy.
-readPool, err := wallets.ReadPool(ctx, cluster.ReadReplicaPreferred)
+reader, err := users.ReadPool(ctx, cluster.ReadReplicaPreferred)
 if err != nil {
-	panic(err)
+    return err
 }
 
-var frozen bool
-err = readPool.QueryRow(ctx, "SELECT frozen FROM wallets WHERE id = $1", walletID).Scan(&frozen)
+var active bool
+err = reader.QueryRow(ctx, "SELECT active FROM users WHERE id = $1", userID).Scan(&active)
 if err != nil {
-	panic(err)
+    return err
 }
 ```
+
 <!-- @formatter:on -->
 
 ### Cluster Transactions
 
 Cluster transactions combine explicit primary/replica routing with the native `pgx` transaction API.
 
-#### Primary Transactions
+**Primary Transactions**
 
-`InPrimaryTx` runs the transaction on the cluster primary and is intended for atomic multi-step writes.
+`InPrimaryTx` runs the transaction on the cluster primary and is intended for atomic writes. The transaction commits on
+`nil` and rolls back on error.
 
 <!-- @formatter:off -->
+
 ```go
-err := wallets.InPrimaryTx(
-    ctx,
-    pgx.TxOptions{},
-    func(ctx context.Context, tx pgx.Tx) error {
-        const debitQuery = `
-            UPDATE wallets
-            SET balance = balance - $1
-            WHERE id = $2 AND balance >= $1
-        `
-
-        result, err := tx.Exec(ctx, debitQuery, amount, fromID)
-        if err != nil {
-            return err
-        }
-
-        if result.RowsAffected() == 0 {
-            return errors.New("insufficient funds or wallet not found")
-        }
-
-        const creditQuery = `
-            UPDATE wallets
-            SET balance = balance + $1
-            WHERE id = $2
-        `
-
-        _, err = tx.Exec(ctx, creditQuery, amount, toID)
-
-        return err
-    },
-)
+err := users.InPrimaryTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
+    _, err := tx.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
+    return err
+})
 ```
+
 <!-- @formatter:on -->
 
-The transaction commits on `nil` and rolls back on error.
-
-#### Read Transactions
+**Read Transactions**
 
 `InReadTx` routes the transaction according to the selected read policy and enforces PostgreSQL read-only mode. Use it
 for read workloads that can run on replicas.
 
 <!-- @formatter:off -->
-```go
-var (
-    totalWallets int64
-    totalBalance int64
-)
 
-err := wallets.InReadTx(
+```go
+err := users.InReadTx(
     ctx,
     cluster.ReadReplicaPreferred,
     cluster.ReadTxOptions{
         IsoLevel: pgx.RepeatableRead,
     },
     func(ctx context.Context, tx pgx.Tx) error {
-        const query = `
-            SELECT count(*), coalesce(sum(balance), 0)
-            FROM wallets
-            WHERE created_at > $1
-        `
-
-        return tx.QueryRow(ctx, query, since).Scan(
-            &totalWallets,
-            &totalBalance,
-        )
+        return tx.QueryRow(ctx, "SELECT active FROM users WHERE id = $1", userID).Scan(&active)
     },
 )
 ```
+
 <!-- @formatter:on -->
 
-#### Read Routing Policies
+### Read Routing Policies
 
 Read policies control how reads and read-only transactions are routed across the cluster:
 
@@ -259,8 +236,9 @@ The `topology/shard` package provides application-level sharding with explicit k
 topology. Routing strategies live under `topology/shard/resolver`.
 
 <!-- @formatter:off -->
+
 ```go
-topology, err := shard.NewTopology(clusterA, clusterB)
+topology, err := shard.NewTopology(cluster1, cluster2)
 if err != nil {
     panic(err)
 }
@@ -278,30 +256,28 @@ if err != nil {
     panic(err)
 }
 
-// Write to the shard primary.
-primaryPool := targetShard.Primary()
+// Route writes to the shard primary.
+writer := targetShard.Primary()
 
-_, err = primaryPool.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
+_, err = writer.Exec(ctx, "UPDATE users SET active = true WHERE id = $1", userID)
 if err != nil {
     panic(err)
 }
 
-// Read from the same shard using the selected read policy.
-readPool, err := targetShard.ReadPool(ctx, cluster.ReadReplicaPreferred)
+// Route reads according to the selected policy.
+reader, err := targetShard.ReadPool(ctx, cluster.ReadReplicaPreferred)
 if err != nil {
     panic(err)
 }
 
 var active bool
-err = readPool.QueryRow(ctx, "SELECT active FROM users WHERE id = $1", userID).Scan(&active)
+err = reader.QueryRow(ctx, "SELECT active FROM users WHERE id = $1", userID).Scan(&active)
 if err != nil {
     panic(err)
 }
 ```
-<!-- @formatter:on -->
 
-Resolvers support multiple placement strategies, while shard utilities provide colocation checks, strict grouping,
-tolerant partitioning, and bounded parallel operations across shards.
+<!-- @formatter:on -->
 
 ### Routing Strategies
 
@@ -309,13 +285,14 @@ Resolvers bind a data-placement strategy to an immutable shard topology. Every r
 contract, allowing application code to resolve keys independently of the selected strategy.
 
 | Resolver             | Best Suited For                       | Routing Model                                                         |
-|:---------------------|:--------------------------------------|:----------------------------------------------------------------------|
+| :------------------- | :------------------------------------ | :-------------------------------------------------------------------- |
 | `RendezvousResolver` | Keys without natural ranges           | Deterministic Highest Random Weight (HRW) hashing within a namespace. |
 | `RangeResolver`      | Ordered numeric or string keys        | Bounded, non-overlapping half-open intervals `[Start, End)`.          |
 | `TimeRangeResolver`  | Time-series or partitioned event data | Bounded chronological intervals normalized to UTC.                    |
 | `CustomResolver`     | Domain-specific placement rules       | Application-defined mapping from a key to `shard.ID`.                 |
 
 <!-- @formatter:off -->
+
 ```go
 // Rendezvous hashing distributes arbitrary keys deterministically across the topology.
 usersByHash, _ := resolver.NewRendezvous(topology, "users", resolver.Uint64KeyEncoder())
@@ -348,11 +325,13 @@ tenantsByRegion, _ := resolver.NewCustom(topology, func(region string) (shard.ID
     }
 })
 ```
+
 <!-- @formatter:on -->
 
 Regardless of the selected strategy, routing uses the same `Resolve` contract:
 
 <!-- @formatter:off -->
+
 ```go
 targetShard, err := usersByHash.Resolve(userID)
 if err != nil {
@@ -361,6 +340,7 @@ if err != nil {
 
 log.Printf("resolved shard: %s", targetShard.ID())
 ```
+
 <!-- @formatter:on -->
 
 Range and time-range resolvers may contain intentional gaps in the configured keyspace; keys that do not match any range
@@ -375,6 +355,7 @@ For complex batch operations, `xpg` provides routing primitives to analyze, grou
 across a shard topology.
 
 <!-- @formatter:off -->
+
 ```go
 // Add range-based routing over the same shard topology.
 rangeResolver, _ := resolver.NewRange(topology, []resolver.Range[uint64]{
@@ -382,14 +363,16 @@ rangeResolver, _ := resolver.NewRange(topology, []resolver.Range[uint64]{
     {Start: 100, End: 200, ShardID: "shard-b"},
 })
 ```
+
 <!-- @formatter:on -->
 
-#### Strict Colocation Checks
+**Strict Colocation**
 
-Use `SameShard` to guarantee that a set of keys resolves to the same shard before executing a shard-local transaction or
-another operation that must remain colocated.
+`SameShard` verifies that all keys resolve to the same shard before a shard-local transaction or another operation that
+must remain colocated.
 
 <!-- @formatter:off -->
+
 ```go
 // Verify that all keys resolve to the same shard.
 targetShard, err := shard.SameShard(rangeResolver, 42, 43)
@@ -400,45 +383,40 @@ if err != nil {
 // Use the resolved shard for a shard-local operation.
 log.Printf("resolved shard: %s", targetShard.ID())
 ```
+
 <!-- @formatter:on -->
 
-#### Strict Batch Grouping
+**Strict Batch Grouping**
 
-`GroupByShard` groups a slice of keys by destination shard. It uses strict routing semantics and fails if any key cannot
-be resolved.
+`GroupByShard` groups keys by destination shard and fails if any key cannot be resolved.
 
 <!-- @formatter:off -->
+
 ```go
 keys := []uint64{42, 142, 43, 143}
 
 groups, err := shard.GroupByShard(rangeResolver, keys)
 if err != nil {
-    panic(err) // Fails if any key cannot be resolved.
+    panic(err)
 }
 
 for _, group := range groups {
     // Execute one shard-local batch update for each resolved group.
     _ = group.Shard.InPrimaryTx(ctx, pgx.TxOptions{}, func(ctx context.Context, tx pgx.Tx) error {
-        const query = `
-            UPDATE users
-            SET active = true
-            WHERE id = ANY($1)
-        `
-
-        _, err := tx.Exec(ctx, query, group.Keys)
-
+        _, err := tx.Exec(ctx, "UPDATE users SET active = true WHERE id = ANY($1)", group.Keys)
         return err
     })
 }
 ```
+
 <!-- @formatter:on -->
 
-#### Tolerant Partitioning
+**Tolerant Partitioning**
 
-`PartitionByShard` provides a relaxed alternative to strict grouping. Routable keys are grouped by shard, while keys
-that do not resolve to any shard are collected separately.
+`PartitionByShard` groups routable keys by shard while collecting keys that do not resolve to any shard separately.
 
 <!-- @formatter:off -->
+
 ```go
 keys := []uint64{42, 142, 250, 43, 143} // 250 falls outside the configured ranges.
 
@@ -457,6 +435,7 @@ if len(partition.Unresolved) != 0 {
     log.Printf("unresolved keys: %v", partition.Unresolved)
 }
 ```
+
 <!-- @formatter:on -->
 
 ### Parallel Fan-Out Operations
@@ -465,30 +444,25 @@ if len(partition.Unresolved) != 0 {
 many shard callbacks may run at the same time; setting it to `1` makes execution sequential.
 
 <!-- @formatter:off -->
+
 ```go
+const maxConcurrency = 4
+
 timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 defer cancel()
 
-const maxConcurrency = 4
-
-expiredBefore := time.Now()
+cutoff := time.Now()
 
 results, err := topology.ForEachShard(
     timeoutCtx,
     maxConcurrency,
-    func(ctx context.Context, s shard.Shard) error {
-        primary := s.Primary()
-        if primary == nil {
+    func(ctx context.Context, target shard.Shard) error {
+        writer := target.Primary()
+        if writer == nil {
             return cluster.ErrNoPrimary
         }
 
-        const query = `
-            DELETE FROM sessions
-            WHERE expired_at < $1
-        `
-
-        _, err := primary.Exec(ctx, query, expiredBefore)
-
+        _, err := writer.Exec(ctx, "DELETE FROM sessions WHERE expired_at < $1", cutoff)
         return err
     },
 )
@@ -503,6 +477,7 @@ for _, result := range results {
     }
 }
 ```
+
 <!-- @formatter:on -->
 
 Results preserve topology registration order and retain individual shard failures, while the returned error aggregates
