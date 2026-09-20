@@ -3,7 +3,7 @@ module github.com/mkbeh/xpg/extra/otelxpg
 go 1.27
 
 require (
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/mkbeh/xpg v0.2.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
