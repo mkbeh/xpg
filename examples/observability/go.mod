@@ -3,7 +3,7 @@ module observability
 go 1.27
 
 require (
-	github.com/exaring/otelpgx v0.11.1
+	github.com/exaring/otelpgx v0.12.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/mkbeh/xpg v0.4.0
 	github.com/mkbeh/xpg/extra/otelxpg v0.1.0
